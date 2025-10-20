@@ -1,0 +1,23 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE files
+.vscode/
+
+*.DS_Store
+
+*.csv
+
+!data/benchmarks/*.csv
+data/spotify/*
+
+*.dat
+*.idx
+*.db
+**/tables_metadata.json

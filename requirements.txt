@@ -1,0 +1,6 @@
+rtree
+fastapi
+uvicorn
+pydantic
+requests
+pandas

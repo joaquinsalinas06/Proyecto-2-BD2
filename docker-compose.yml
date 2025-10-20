@@ -1,0 +1,43 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: bd2-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Volúmenes para datos y código fuente
+      - ./data:/app/data
+      - ./src:/app/src
+      - ./api:/app/api
+      # Usar volumen nombrado para índices
+      - bd2-indices:/app/indices
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - bd2-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bd2-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - bd2-network
+    restart: unless-stopped
+
+networks:
+  bd2-network:
+    driver: bridge
+
+volumes:
+  # Volumen para persistir índices
+  bd2-indices:
