@@ -8,11 +8,10 @@ services:
       - "8000:8000"
     volumes:
       # Volúmenes para datos y código fuente
-      - ./data:/app/data
       - ./src:/app/src
       - ./api:/app/api
-      # Usar volumen nombrado para índices
-      - bd2-indices:/app/indices
+      - ./data:/app/data
+      - bd2-api-data:/app/data/api
     environment:
       - PYTHONUNBUFFERED=1
     networks:
@@ -39,5 +38,5 @@ networks:
     driver: bridge
 
 volumes:
-  # Volumen para persistir índices
-  bd2-indices:
+  # Volumen para persistir datos del API
+  bd2-api-data:

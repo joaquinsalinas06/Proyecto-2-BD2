@@ -6,21 +6,9 @@ sys.path.insert(0, project_root)
 
 from src.table_manager import TableManager
 
-def clean_indices():
-    test_dir = os.path.dirname(os.path.abspath(__file__))
-    indices_dir = os.path.join(test_dir, "indices")
-    if os.path.exists(indices_dir):
-        for file in os.listdir(indices_dir):
-            filepath = os.path.join(indices_dir, file)
-            try:
-                os.remove(filepath)
-            except:
-                pass
-
 if __name__ == "__main__":
     print("TEST: Indice Secuencial\n")
 
-    clean_indices()
     tm = TableManager()
 
     print("1. Creando tabla con indice secuencial...")

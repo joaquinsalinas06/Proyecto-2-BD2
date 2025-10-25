@@ -13,11 +13,19 @@ venv/
 *.DS_Store
 
 *.csv
-
 !data/benchmarks/*.csv
 data/spotify/*
+
+data/test/
+data/benchmarks/indices/
+data/benchmarks/temp/
+data/benchmarks/.temp_*
+
+# Legacy indices folder (if still exists)
+indices/
 
 *.dat
 *.idx
 *.db
 **/tables_metadata.json
+

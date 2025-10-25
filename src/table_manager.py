@@ -1,6 +1,7 @@
 import os
 import csv
 import json
+import inspect
 from typing import List, Dict, Any, Optional
 from .parser.ast import (
     ColumnDef, IndexType, Value, Condition, DataType,
@@ -57,12 +58,28 @@ class Table:
 class TableManager:
     def __init__(self):
         self.tables: Dict[str, Table] = {}
-        self.indices_directory = "indices"
+        self.indices_directory = self._detect_indices_directory()
         os.makedirs(self.indices_directory, exist_ok=True)
         self.metadata_file = os.path.join(self.indices_directory, "tables_metadata.json")
 
         self.parser = SQLParser()
         self._load_table_metadata()
+
+    def _detect_indices_directory(self) -> str:
+        for frame_info in inspect.stack()[1:]:
+            caller_file = frame_info.filename
+            caller_file_normalized = caller_file.replace('\\', '/')
+
+            if '/tests/' in caller_file_normalized:
+                return "data/test/indices"
+
+            if '/benchmarks/' in caller_file_normalized:
+                return "data/benchmarks/indices"
+            
+            if '/api/' in caller_file_normalized:
+                return "data/api/indices"
+
+        return "indices"
         
     #Se manda directamente el query a la funcion sql, que se encarga de parsearlo y ejecutar cada stmt
     def sql(self, query: str) -> List[Dict[str, Any]]:

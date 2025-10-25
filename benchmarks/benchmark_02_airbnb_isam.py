@@ -93,33 +93,6 @@ def run_benchmark():
         table_name = f"airbnb_isam_{size_label.lower()}"
 
         try:
-            import glob
-            
-            if Path(f"indices/{table_name}").exists():
-                shutil.rmtree(f"indices/{table_name}")
-            
-            for idx_file in glob.glob(f"indices/{table_name}_*.*"):
-                try:
-                    Path(idx_file).unlink()
-                except:
-                    pass
-
-            metadata_path = Path("indices/tables_metadata.json")
-            if metadata_path.exists():
-                try:
-                    with open(metadata_path, 'r') as f:
-                        metadata = json.load(f)
-                    
-                    tables_to_remove = [k for k in metadata.keys() if k.startswith('airbnb_isam_')]
-                    for tbl in tables_to_remove:
-                        if tbl in metadata:
-                            del metadata[tbl]
-                    
-                    with open(metadata_path, 'w') as f:
-                        json.dump(metadata, f, indent=2)
-                except:
-                    pass
-
             tm = TableManager()
 
             print_step_header(1, 10, "CREAR TABLA Y CARGA MASIVA")
@@ -415,16 +388,6 @@ def run_benchmark():
                                 pass
             except:
                 pass
-            
-            if Path(f"indices/{table_name}").exists():
-                shutil.rmtree(f"indices/{table_name}")
-            
-            import glob
-            for rtree_file in glob.glob(f"indices/{table_name}_*.dat") + glob.glob(f"indices/{table_name}_*.idx"):
-                try:
-                    Path(rtree_file).unlink()
-                except:
-                    pass
 
     print("\n" + "="*165)
     print("RESUMEN DE RENDIMIENTO - Isam FILE + R-TREE INDEX")
