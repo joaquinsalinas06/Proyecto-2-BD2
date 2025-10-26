@@ -145,9 +145,10 @@ class SQLParser:
                     raise ParseError(f"Index type {index_type.value} cannot be used as primary key index. "
                                 f"Only SEQ, ISAM, and BTREE are allowed for primary key columns.")
             else:
-                if index_type not in [IndexType.HASH, IndexType.RTREE, IndexType.BTREE]:
+                allowed_secondary = [IndexType.HASH, IndexType.RTREE, IndexType.BTREE, IndexType.KNN_SEQ, IndexType.KNN_INV]
+                if index_type not in allowed_secondary:
                     raise ParseError(f"Index type {index_type.value} cannot be used as secondary index. "
-                                f"Only HASH, RTREE, and BTREE are allowed for secondary indexes.")
+                                f"Allowed: HASH, RTREE, BTREE, KNN_SEQ, KNN_INV")
 
         if data_type == DataType.ARRAY:
             array_dimensions = size
@@ -157,8 +158,8 @@ class SQLParser:
 
         return ColumnDef(name, data_type, size, element_type, is_key, index_type, array_dimensions)
     
-    def _parse_data_type(self) -> tuple[DataType, Optional[int], Optional[DataType]]: # data_type -> INT | FLOAT | DATE | VARCHAR[size] | ARRAY[dimension][base_data_type]
-        
+    def _parse_data_type(self) -> tuple[DataType, Optional[int], Optional[DataType]]: # data_type -> INT | FLOAT | DATE | VARCHAR[size] | ARRAY[dimension][base_data_type] | IMAGE | AUDIO 
+
         if self._match(TokenType.INT):
             return DataType.INT, None, None
         elif self._match(TokenType.FLOAT_TYPE):
@@ -170,6 +171,10 @@ class SQLParser:
             size = self._consume(TokenType.INTEGER, "Se esperaba tamaño").lexeme
             self._consume(TokenType.RBRACKET, "Se esperaba ']'")
             return DataType.VARCHAR, int(size), None
+        elif self._match(TokenType.IMAGE):
+            return DataType.IMAGE, 200, None
+        elif self._match(TokenType.AUDIO):
+            return DataType.AUDIO, 200, None
         elif self._match(TokenType.ARRAY):
             self._consume(TokenType.LBRACKET, "Se esperaba '['")
             dimension = int(self._consume(TokenType.INTEGER, "Se esperaba dimensión del array").lexeme)
@@ -185,13 +190,13 @@ class SQLParser:
                 element_type = DataType.DATE
             else:
                 raise ParseError(f"Tipo base inesperado: {self._peek().lexeme}")
-            
+
             self._consume(TokenType.RBRACKET, "Se esperaba ']'")
             return DataType.ARRAY, dimension, element_type
         else:
             raise ParseError(f"Tipo de dato inesperado: {self._peek().lexeme}")
    
-    def _parse_index_type(self) -> IndexType: # index_type -> SEQ | BTREE | HASH | ISAM | RTREE
+    def _parse_index_type(self) -> IndexType: # index_type -> SEQ | BTREE | HASH | ISAM | RTREE | KNN_SEQ | KNN_INV
         if self._match(TokenType.SEQ):
             return IndexType.SEQ
         elif self._match(TokenType.BTREE):
@@ -202,6 +207,10 @@ class SQLParser:
             return IndexType.ISAM
         elif self._match(TokenType.RTREE):
             return IndexType.RTREE
+        elif self._match(TokenType.KNN_SEQ):
+            return IndexType.KNN_SEQ
+        elif self._match(TokenType.KNN_INV):
+            return IndexType.KNN_INV
         else:
             raise ParseError(f"Tipo de índice inesperado: {self._peek().lexeme}")
     

@@ -10,6 +10,8 @@ class DataType(Enum):
     VARCHAR = "VARCHAR"
     DATE = "DATE"
     ARRAY = "ARRAY"
+    IMAGE = "IMAGE"
+    AUDIO = "AUDIO"
 
 
 class IndexType(Enum):
@@ -18,6 +20,8 @@ class IndexType(Enum):
     HASH = "HASH"
     ISAM = "ISAM"
     RTREE = "RTREE"
+    KNN_SEQ = "KNN_SEQ"
+    KNN_INV = "KNN_INV"
 
 
 class CompOp(Enum):
