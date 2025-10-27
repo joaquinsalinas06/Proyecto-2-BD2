@@ -46,6 +46,16 @@ class SpatialIndex(BaseIndex):
         pass
 
 
+class MultimediaIndex(BaseIndex):
+    @abstractmethod
+    def knnSearch(self, query_vector: List[float], k: int) -> List[Tuple[Dict[str, Any], float]]:
+        pass
+
+    @abstractmethod
+    def knnSearchByFile(self, file_path: str, k: int) -> List[Tuple[Dict[str, Any], float]]:
+        pass
+
+
 def create_index(index_type: IndexType, column_name: str, filename: str = None,
                 is_primary: bool = False, primary_key_column: str = None, table_schema=None, expected_size: int = None) -> BaseIndex:
 
@@ -80,6 +90,18 @@ def create_index(index_type: IndexType, column_name: str, filename: str = None,
                     dimensions = col.array_dimensions
                     break
         return RTreeIndex(column_name, filename, is_primary, primary_key_column, dimensions=dimensions)
+
+    elif index_type == IndexType.KNN_SEQ:
+        from .knn_sequential import KNNSequentialIndex
+        if not table_schema:
+            raise ValueError("KNN_SEQ necesita table_schema")
+        return KNNSequentialIndex(column_name, table_schema, filename, is_primary, primary_key_column)
+
+    elif index_type == IndexType.KNN_INV:
+        from .knn_inverted import KNNInvertedIndex
+        if not table_schema:
+            raise ValueError("KNN_INV necesita table_schema")
+        return KNNInvertedIndex(column_name, table_schema, filename, is_primary, primary_key_column)
 
     else:
         raise ValueError(f"Tipo de índice no soportado: {index_type}")

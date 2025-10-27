@@ -178,7 +178,7 @@ class TableManager:
                 index = create_index(
                     col.index_type,
                     col.name,
-                    filename=f"indices/{table.name}_{col.name}.dat",
+                    filename=os.path.join(self.indices_directory, f"{table.name}_{col.name}.dat"),
                     is_primary=col.is_key,
                     primary_key_column=table.key_column if not col.is_key else None,
                     table_schema=table.columns
@@ -189,7 +189,7 @@ class TableManager:
                 index = create_index(
                     col.index_type,
                     col.name,
-                    filename=f"indices/{table.name}_{col.name}.dat",
+                    filename=os.path.join(self.indices_directory, f"{table.name}_{col.name}.dat"),
                     is_primary=True,
                     primary_key_column=None,
                     table_schema=table.columns
@@ -302,7 +302,7 @@ class TableManager:
                 index = create_index(
                     col.index_type,
                     col.name,
-                    filename=f"indices/{table.name}_{col.name}.dat",
+                    filename=os.path.join(self.indices_directory, f"{table.name}_{col.name}.dat"),
                     is_primary=col.is_key,
                     primary_key_column=table.key_column if not col.is_key else None,
                     table_schema=table.columns,
@@ -372,6 +372,33 @@ class TableManager:
 
         self._save_table_metadata()
 
+    def _extract_multimedia_features(self, record_dict: Dict[str, Any], table: Table) -> Dict[str, Any]:
+        for col in table.columns:
+            if col.data_type.value not in ["IMAGE", "AUDIO"]:
+                continue
+
+            col_val = record_dict.get(col.name)
+            if not col_val or not isinstance(col_val, str):
+                continue
+
+            feature_dim = 128
+            if col.data_type.value == "AUDIO":
+                feature_dim = 25
+
+            values = {
+                'path': col_val,
+                'features': [0.0] * feature_dim
+            }
+
+            knn_index = table.indexes.get(col.name)
+            if knn_index and hasattr(knn_index, 'extractor'):
+                extracted = knn_index.extractor.extract(col_val)
+                values['features'] = extracted.tolist()
+
+            record_dict[col.name] = values
+
+        return record_dict
+
     '''
     Insertamos un registro en la tabla, verificando que la tabla exista
     Por cada columna que tenga un indice, insertamos el registro en el indice
@@ -382,9 +409,12 @@ class TableManager:
         table = self.tables[table_name]
         record_dict = {}
         for col, value in zip(table.columns, values):
-            val = value.value
-            record_dict[col.name] = val
+            record_dict[col.name] = value.value
 
+        # Verificamos si hay que extraer features multimedia
+        record_dict = self._extract_multimedia_features(record_dict, table)
+        print(record_dict)
+        #Ya con los features extraidos, insertamos en los indices
         for _, index in table.indexes.items():
             if index is not None:
                 index.add(record_dict)
@@ -903,7 +933,7 @@ class TableManager:
 
             for col in columns:
                 if col.index_type:
-                    filename = f"indices/{table_name}_{col.name}.dat"
+                    filename = os.path.join(self.indices_directory, f"{table_name}_{col.name}.dat")
                     index = create_index(
                         index_type=col.index_type,
                         column_name=col.name,

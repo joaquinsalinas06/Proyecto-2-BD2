@@ -40,17 +40,21 @@ class DynamicRecord:
             elif col.data_type.value == "ARRAY":
                 if not isinstance(value, (list, tuple)):
                     raise ValueError(f"'{col.name}' debe ser array")
-                
+
                 if len(value) != col.array_dimensions:
                     raise ValueError(
                         f"Array '{col.name}' requiere {col.array_dimensions} elementos, "
                         f"recibió {len(value)}"
                     )
-                
+
                 if col.element_type.value == "FLOAT":
-                    tranfor_valor = [float(x) for x in value]
+                    tranfor_valor = []
+                    for x in value:
+                        tranfor_valor.append(float(x))
                 elif col.element_type.value == "INT":
-                    tranfor_valor = [int(x) for x in value]
+                    tranfor_valor = []
+                    for x in value:
+                        tranfor_valor.append(int(x))
                 else:
                     tranfor_valor = list(value)
 
@@ -121,6 +125,8 @@ class DynamicRecord:
                 else:
                     path = str(value)
                     features = [0.0]*25
+                encoded_path = path[:200].ljust(200).encode('utf-8', errors='replace')
+                pack_values.append(encoded_path)
                 pack_values.extend(features[:25])
             elif col.data_type.value == "ARRAY":
                 pack_values.extend(value)
