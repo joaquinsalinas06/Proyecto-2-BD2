@@ -1,6 +1,5 @@
 import librosa
 import numpy as np
-from typing import Optional
 from .base_extractor import BaseFeatureExtractor
 
 class MFCCExtractor(BaseFeatureExtractor):
@@ -9,9 +8,7 @@ class MFCCExtractor(BaseFeatureExtractor):
         '.aac', '.opus', '.aiff', '.au'
     ]
 
-    def __init__(
-        self,
-    ):
+    def __init__(self):
         super().__init__()
 
     def extract(self, file_path: str) -> np.ndarray:
@@ -25,13 +22,13 @@ class MFCCExtractor(BaseFeatureExtractor):
 
             if len(y) == 0:
                 raise ValueError(f"El archivo de audio está vacío: {file_path}")
-            
+
             mfccs = librosa.feature.mfcc(
                 y=y,
                 sr=sr,
                 n_mfcc=25
             )
-            return mfccs.mean(axis=1).astype(np.float32)
+            return mfccs.T.astype(np.float32)
 
         except Exception as e:
             if isinstance(e, (FileNotFoundError, ValueError)):
