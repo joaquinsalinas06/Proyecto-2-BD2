@@ -51,6 +51,7 @@ class TokenType(Enum):
     LESS_EQUALS = "<="
     GREATER_THAN = ">"
     GREATER_EQUALS = ">="
+    KNN_OP = "<->"
     LPAREN = "("
     RPAREN = ")"
     LBRACKET = "["

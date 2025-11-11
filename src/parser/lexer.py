@@ -41,7 +41,12 @@ class Lexer:
             else:
                 raise LexerError(f"Carácter inesperado '!' en línea {self.line}")
         elif char == '<':
-            if self._match('='):
+            if self._match('-'):
+                if self._match('>'):
+                    self._add_token(TokenType.KNN_OP)
+                else:
+                    raise LexerError(f"Operador incompleto '<-' en línea {self.line}")
+            elif self._match('='):
                 self._add_token(TokenType.LESS_EQUALS)
             else:
                 self._add_token(TokenType.LESS_THAN)
