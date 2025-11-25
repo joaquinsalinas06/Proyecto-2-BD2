@@ -46,18 +46,20 @@ class SpatialIndex(BaseIndex):
         pass
 
 
-class MultimediaIndex(BaseIndex):
-    @abstractmethod
-    def knnSearch(self, query_vector: List[float], k: int) -> List[Tuple[Dict[str, Any], float]]:
-        pass
 
+class MultimediaIndexBase(ABC):
+    def __init__(self, column_name: str, filename: str = None):
+        self.column_name = column_name
+        self.filename = filename or f"{column_name}_knn_index.dat"
     @abstractmethod
     def knnSearchByFile(self, file_path: str, k: int) -> List[Tuple[Dict[str, Any], float]]:
         pass
 
 
 def create_index(index_type: IndexType, column_name: str, filename: str = None,
-                is_primary: bool = False, primary_key_column: str = None, table_schema=None, expected_size: int = None) -> BaseIndex:
+                is_primary: bool = False, primary_key_column: str = None, table_schema=None,
+                expected_size: int = None, vocabulary_size: int = None, codebook_file: str = None,
+                extractor=None, idf_threshold: float = 1.97, index_prefix: str = None) -> BaseIndex:
 
     if index_type == IndexType.SEQ:
         from .sequential_file import SequentialFileIndex
@@ -82,7 +84,6 @@ def create_index(index_type: IndexType, column_name: str, filename: str = None,
 
     elif index_type == IndexType.RTREE:
         from .rtree_index import RTreeIndex
-        # Extraer las dimensiones del esquema de la tabla si está disponible
         dimensions = 2
         if table_schema:
             for col in table_schema:
@@ -95,13 +96,16 @@ def create_index(index_type: IndexType, column_name: str, filename: str = None,
         from .knn_sequential import KNNSequentialIndex
         if not table_schema:
             raise ValueError("KNN_SEQ necesita table_schema")
-        return KNNSequentialIndex(column_name, table_schema, filename, is_primary, primary_key_column)
+        return KNNSequentialIndex(column_name, table_schema, filename, is_primary, primary_key_column,
+                                 vocabulary_size=vocabulary_size, codebook_file=codebook_file, extractor=extractor)
 
     elif index_type == IndexType.KNN_INV:
         from .knn_inverted import KNNInvertedIndex
         if not table_schema:
             raise ValueError("KNN_INV necesita table_schema")
-        return KNNInvertedIndex(column_name, table_schema, filename, is_primary, primary_key_column)
+        return KNNInvertedIndex(column_name, table_schema, filename, is_primary, primary_key_column,
+                               vocabulary_size=vocabulary_size, codebook_file=codebook_file, extractor=extractor,
+                               idf_threshold=idf_threshold, index_prefix=index_prefix)
 
     else:
         raise ValueError(f"Tipo de índice no soportado: {index_type}")

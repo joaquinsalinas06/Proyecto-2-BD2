@@ -2,17 +2,21 @@ import os
 import csv
 import json
 import inspect
+import glob
 from typing import List, Dict, Any, Optional
 from .parser.ast import (
     ColumnDef, IndexType, Value, Condition, DataType,
     CompCond, BetweenCond, SpatialInCond,
-    SpatialKNNCond, LogicCond, Statement,
+    SpatialKNNCond, MultimediaKNNCond, LogicCond, Statement,
     CreateTableStmt, CreateTableFileStmt, SelectStmt,
     InsertStmt, DeleteStmt, IndexSpec
 )
 from .parser.sql_parser import SQLParser
 from src.records import DynamicRecord
 from src.records.indices import create_index
+from src.multimedia.feature_extractors import SIFTExtractor
+from src.multimedia.feature_extractors import MFCCExtractor
+from src.multimedia.build_pipeline import build_knn_index_from_collection
 
 '''
 La clase Table representa una tabla en la base de datos, con su esquema y sus índices, de tal forma
@@ -66,21 +70,134 @@ class TableManager:
         self._load_table_metadata()
 
     def _detect_indices_directory(self) -> str:
+        current_file = os.path.abspath(__file__)
+        project_root = os.path.dirname(os.path.dirname(current_file))
+        
         for frame_info in inspect.stack()[1:]:
             caller_file = frame_info.filename
             caller_file_normalized = caller_file.replace('\\', '/')
 
             if '/tests/' in caller_file_normalized:
-                return "data/test/indices"
+                return os.path.join(project_root, "data", "test", "indices")
 
             if '/benchmarks/' in caller_file_normalized:
-                return "data/benchmarks/indices"
-            
-            if '/api/' in caller_file_normalized:
-                return "data/api/indices"
+                return os.path.join(project_root, "data", "benchmarks", "indices")
 
-        return "indices"
-        
+        return os.path.join(project_root, "indices")
+
+    def _get_multimedia_config(self, col: ColumnDef, table_name: str, csv_basename: str = None):
+        if col.data_type not in [DataType.IMAGE, DataType.AUDIO]:
+            return None, None, None
+
+        options = col.index_options or {}
+
+        if col.data_type == DataType.IMAGE:
+            extractor = SIFTExtractor()
+            default_clusters = 2000
+        elif col.data_type == DataType.AUDIO:
+            extractor = MFCCExtractor()
+            default_clusters = 500
+        else:
+            return None, None, None
+
+        vocabulary_size = options.get('clusters', default_clusters)
+
+        # CASO 1: Dataset pre-construido
+        if 'dataset' in options:
+            dataset_name = options['dataset']
+            if col.data_type == DataType.IMAGE and dataset_name == 'fashion':
+                codebook_file = os.path.join(self.indices_directory, f"fashion_k{vocabulary_size}_codebook.dat")
+            elif col.data_type == DataType.AUDIO and dataset_name == 'fma':
+                codebook_file = os.path.join(self.indices_directory, f"fma_k{vocabulary_size}_codebook.dat")
+            else:
+                raise ValueError(f"Dataset '{dataset_name}' no reconocido para tipo {col.data_type.value}")
+
+            if not os.path.exists(codebook_file):
+                raise FileNotFoundError(
+                    f"Codebook no encontrado: {codebook_file}\n"
+                    f"Ejecuta 'python build_image_pipeline.py' para generar el codebook."
+                )
+
+            return vocabulary_size, codebook_file, extractor
+
+        elif 'index_prefix' in options:
+            index_prefix = options['index_prefix']
+
+            if '_k' in index_prefix:
+                try:
+                    k_part = index_prefix.split('_k')[1]
+                    vocabulary_size = int(k_part)
+                except (IndexError, ValueError):
+                    pass
+
+
+            # Determina que codebook buscar
+            codebook_candidates = [
+                os.path.join(self.indices_directory, f"codebook_SIFT_k{vocabulary_size}.dat"),
+                os.path.join(self.indices_directory, f"codebook_MFCC_k{vocabulary_size}.dat"),
+            ]
+
+            codebook_file = None
+            for candidate in codebook_candidates:
+                if os.path.exists(candidate):
+                    codebook_file = candidate
+                    break
+
+            if not codebook_file:
+                raise FileNotFoundError(
+                    f"No se encontró codebook para index_prefix='{index_prefix}'\n"
+                    f"Se buscó en: {codebook_candidates}\n"
+                    f"Asegúrate de ejecutar 'python build_all_indices.py' primero."
+                )
+
+            return vocabulary_size, codebook_file, extractor
+
+        # CASO 3: Construir desde collection
+        elif 'collection' in options:
+            collection_path = options['collection']
+            if not os.path.exists(collection_path):
+                raise FileNotFoundError(f"Collection path no encontrado: {collection_path}")
+
+            # Incluir nombre del CSV si existe
+            if csv_basename:
+                base_filename = f"{table_name}_{col.name}_{csv_basename}"
+            else:
+                base_filename = f"{table_name}_{col.name}"
+
+            codebook_file = os.path.join(
+                self.indices_directory,
+                f"{base_filename}_k{vocabulary_size}_codebook.dat"
+            )
+            return vocabulary_size, codebook_file, extractor
+
+        else:
+            raise ValueError(
+                f"Índice KNN requiere 'dataset', 'index_prefix', o 'collection' en index_options.\n"
+                f"Ejemplos:\n"
+                f"  INDEX KNN_INV(dataset='fashion')\n"
+                f"  INDEX KNN_INV(index_prefix='fashion_basic_k2000')\n"
+                f"  INDEX KNN_SEQ(collection='data/imagenes', clusters=1000)"
+            )
+
+    def _build_codebook_from_collection(self, collection_path: str, codebook_file: str,
+                                       vocabulary_size: int, extractor, inverted_file: str,
+                                       mapping_file: str):
+        histograms_file = inverted_file.replace('_inverted.dat', '_histograms.dat')
+        buckets_file = inverted_file.replace('_inverted.dat', '_buckets.dat')
+
+        build_knn_index_from_collection(
+            collection_path=collection_path,
+            codebook_file=codebook_file,
+            vocabulary_size=vocabulary_size,
+            extractor=extractor,
+            inverted_file=inverted_file,
+            mapping_file=mapping_file,
+            histograms_file=histograms_file,
+            buckets_file=buckets_file,
+            verbose=True
+        )
+
+
     #Se manda directamente el query a la funcion sql, que se encarga de parsearlo y ejecutar cada stmt
     def sql(self, query: str) -> List[Dict[str, Any]]:
         statements = self.parser.parse(query)
@@ -166,22 +283,67 @@ class TableManager:
     aqui diferenciamos si es un indice primario o secundario
     en caso identificamos una columna que es llave primaria pero no tiene indice, le asignamos un BTree por defecto
     '''
-    def create_table(self, table_name: str, columns: List[ColumnDef]):
+    def create_table(self, table_name: str, columns: List[ColumnDef], csv_basename: str = None):
         if table_name in self.tables:
             raise ValueError(f"La tabla '{table_name}' ya existe")
         
         table = Table(table_name, columns)
         self.tables[table_name] = table
-        
+
         for col in table.columns:
             if col.index_type:
+                if col.data_type in [DataType.IMAGE, DataType.AUDIO]:
+                    vocabulary_size, codebook_file, extractor = self._get_multimedia_config(col, table.name)
+                    col.vocabulary_size = vocabulary_size
+                    
+                    options = col.index_options or {}
+                    if 'collection' in options and not os.path.exists(codebook_file):
+                        collection_path = options['collection']
+                        # Incluir nombre del CSV si existe
+                        if csv_basename:
+                            base_filename = f"{table.name}_{col.name}_{csv_basename}"
+                        else:
+                            base_filename = f"{table.name}_{col.name}"
+                        inverted_file = os.path.join(self.indices_directory, f"{base_filename}_inverted.dat")
+                        mapping_file = os.path.join(self.indices_directory, f"{base_filename}_mapping.dat")
+                        histograms_file = inverted_file.replace('_inverted.dat', '_histograms.dat')
+                        buckets_file = inverted_file.replace('_inverted.dat', '_buckets.dat')
+
+                        id_extractor = None
+                        if 'id_from_filename' in options and options['id_from_filename']:
+                            id_extractor = lambda path: int(os.path.basename(path).split('.')[0])
+
+                        build_knn_index_from_collection(
+                            collection_path=collection_path,
+                            codebook_file=codebook_file,
+                            vocabulary_size=vocabulary_size,
+                            extractor=extractor,
+                            inverted_file=inverted_file,
+                            mapping_file=mapping_file,
+                            histograms_file=histograms_file,
+                            buckets_file=buckets_file,
+                            verbose=True,
+                            id_extractor=id_extractor
+                        )
+                else:
+                    vocabulary_size, codebook_file, extractor = None, None, None
+                
+                # Extraer index_prefix si existe en options
+                index_prefix = None
+                if col.index_options and 'index_prefix' in col.index_options:
+                    index_prefix = col.index_options['index_prefix']
+
                 index = create_index(
                     col.index_type,
                     col.name,
                     filename=os.path.join(self.indices_directory, f"{table.name}_{col.name}.dat"),
                     is_primary=col.is_key,
                     primary_key_column=table.key_column if not col.is_key else None,
-                    table_schema=table.columns
+                    table_schema=table.columns,
+                    vocabulary_size=vocabulary_size,
+                    codebook_file=codebook_file,
+                    extractor=extractor,
+                    index_prefix=index_prefix
                 )
                 table.indexes[col.name] = index
             elif col.is_key and col.index_type is None:
@@ -205,6 +367,8 @@ class TableManager:
     def create_table_from_file(self, table_name: str, file_path: str, indexes: List['IndexSpec']):
         if table_name in self.tables:
             raise ValueError(f"La tabla '{table_name}' ya existe")
+
+        csv_basename = os.path.splitext(os.path.basename(file_path))[0]
 
         # Extraer la columna primaria y crear diccionario de índices por columna
         primary_index_spec = None
@@ -277,11 +441,32 @@ class TableManager:
             array_dimensions = None
             data_type = stats['type']
 
-            if stats['type'] == DataType.VARCHAR:
-                size = max(1, int(stats['max_length'] * 1.1))
-            elif stats['type'] == DataType.ARRAY:
-                element_type = DataType.FLOAT
-                array_dimensions = 2
+            # Check if index options specify a type override (for multimedia columns)
+            type_overridden = False
+            if index_spec and index_spec.index_options:
+                type_override = index_spec.index_options.get('type')
+                if type_override:
+                    if type_override.upper() == 'IMAGE':
+                        data_type = DataType.IMAGE
+                        size = 200  # Default size for IMAGE paths
+                        type_overridden = True
+                    elif type_override.upper() == 'AUDIO':
+                        data_type = DataType.AUDIO
+                        size = 200  # Default size for AUDIO paths
+                        type_overridden = True
+
+            # Only apply default sizing if type wasn't overridden
+            if not type_overridden:
+                if stats['type'] == DataType.VARCHAR:
+                    size = max(1, int(stats['max_length'] * 1.1))
+                elif stats['type'] == DataType.ARRAY:
+                    element_type = DataType.FLOAT
+                    array_dimensions = 2
+
+            if index_spec:
+                col_index_options = index_spec.index_options  
+            else:   
+                col_index_options = None
 
             column = ColumnDef(
                 name=header,
@@ -290,7 +475,8 @@ class TableManager:
                 element_type=element_type,
                 is_key=is_key,
                 index_type=col_index_type,
-                array_dimensions=array_dimensions
+                array_dimensions=array_dimensions,
+                index_options=col_index_options
             )
             columns.append(column)
 
@@ -299,6 +485,65 @@ class TableManager:
 
         for col in table.columns:
             if col.index_type:
+                is_knn_index = col.index_type in [IndexType.KNN_SEQ, IndexType.KNN_INV]
+                is_multimedia_type = col.data_type in [DataType.IMAGE, DataType.AUDIO]
+
+                if is_knn_index or is_multimedia_type:
+                    # Para KNN desde CSV, incluir nombre del CSV en archivos
+                    options = col.index_options or {}
+
+                    if not is_multimedia_type and 'collection' in options:
+                        collection_path = options['collection']
+                        if any(ext in collection_path.lower() for ext in ['jpg', 'jpeg', 'png', 'image']):
+                            extractor = SIFTExtractor()
+                            default_clusters = 2000
+                        else:
+                            extractor = MFCCExtractor()
+                            default_clusters = 500
+
+                        vocabulary_size = options.get('k', default_clusters)
+                        base_filename = f"{table.name}_{col.name}_{csv_basename}"
+                        codebook_file = os.path.join(
+                            self.indices_directory,
+                            f"{base_filename}_k{vocabulary_size}_codebook.dat"
+                        )
+                    else:
+                        vocabulary_size, codebook_file, extractor = self._get_multimedia_config(col, table.name, csv_basename)
+
+                    col.vocabulary_size = vocabulary_size
+
+                    if 'collection' in options and not os.path.exists(codebook_file):
+                        collection_path = options['collection']
+                        base_filename = f"{table.name}_{col.name}_{csv_basename}"
+                        inverted_file = os.path.join(self.indices_directory, f"{base_filename}_inverted.dat")
+                        mapping_file = os.path.join(self.indices_directory, f"{base_filename}_mapping.dat")
+                        histograms_file = inverted_file.replace('_inverted.dat', '_histograms.dat')
+                        buckets_file = inverted_file.replace('_inverted.dat', '_buckets.dat')
+
+                        id_extractor = None
+                        if options.get('id_from_filename'):
+                            id_extractor = lambda path: int(os.path.basename(path).split('.')[0])
+
+                        build_knn_index_from_collection(
+                            collection_path=collection_path,
+                            codebook_file=codebook_file,
+                            vocabulary_size=vocabulary_size,
+                            extractor=extractor,
+                            inverted_file=inverted_file,
+                            mapping_file=mapping_file,
+                            histograms_file=histograms_file,
+                            buckets_file=buckets_file,
+                            verbose=True,
+                            id_extractor=id_extractor
+                        )
+                else:
+                    vocabulary_size, codebook_file, extractor = None, None, None
+
+                # Extraer index_prefix si existe en options
+                index_prefix = None
+                if col.index_options and 'index_prefix' in col.index_options:
+                    index_prefix = col.index_options['index_prefix']
+
                 index = create_index(
                     col.index_type,
                     col.name,
@@ -306,7 +551,11 @@ class TableManager:
                     is_primary=col.is_key,
                     primary_key_column=table.key_column if not col.is_key else None,
                     table_schema=table.columns,
-                    expected_size=row_count
+                    expected_size=row_count,
+                    vocabulary_size=vocabulary_size,
+                    codebook_file=codebook_file,
+                    extractor=extractor,
+                    index_prefix=index_prefix
                 )
                 table.indexes[col.name] = index
 
@@ -358,46 +607,23 @@ class TableManager:
                 else:
                     skipped_records += 1
 
-        
+
         # Cuando cargamos muchos registros, es mejor hacer bulk load en los indices primarios
         for _, index in table.indexes.items():
             if index is not None:
+                # Saltar índices que no soportan escritura (KNN_INV, KNN_SEQ)
+                if not hasattr(index, 'add') and not hasattr(index, 'bulk_load'):
+                    continue
+
                 # Si es que existe el metodo de bulk load lo usaremos, como en Sequential, ISAM o B+Tree
                 if hasattr(index, 'bulk_load'):
                     index.bulk_load(all_records)
-                else:
+                elif hasattr(index, 'add'):
                     # Para los indices secundarios usaremos solo el add regular, por sus propiedades
                     for _, record in enumerate(all_records, 1):
                         index.add(record)
 
         self._save_table_metadata()
-
-    def _extract_multimedia_features(self, record_dict: Dict[str, Any], table: Table) -> Dict[str, Any]:
-        for col in table.columns:
-            if col.data_type.value not in ["IMAGE", "AUDIO"]:
-                continue
-
-            col_val = record_dict.get(col.name)
-            if not col_val or not isinstance(col_val, str):
-                continue
-
-            feature_dim = 128
-            if col.data_type.value == "AUDIO":
-                feature_dim = 25
-
-            values = {
-                'path': col_val,
-                'features': [0.0] * feature_dim
-            }
-
-            knn_index = table.indexes.get(col.name)
-            if knn_index and hasattr(knn_index, 'extractor'):
-                extracted = knn_index.extractor.extract(col_val)
-                values['features'] = extracted.tolist()
-
-            record_dict[col.name] = values
-
-        return record_dict
 
     '''
     Insertamos un registro en la tabla, verificando que la tabla exista
@@ -406,18 +632,25 @@ class TableManager:
     def insert(self, table_name: str, values: List[Value]):
         if table_name not in self.tables:
             raise ValueError(f"La tabla '{table_name}' no existe")
+
         table = self.tables[table_name]
+
+        for col_name, index in table.indexes.items():
+            if index is not None and not hasattr(index, 'add'):
+                raise NotImplementedError(
+                    f"INSERT no soportado: la tabla '{table_name}' tiene índices multimedia que son solo lectura. "
+                    f"Los índices multimedia trabajan con colecciones pre-construidas."
+                )
+
         record_dict = {}
         for col, value in zip(table.columns, values):
             record_dict[col.name] = value.value
 
-        # Verificamos si hay que extraer features multimedia
-        record_dict = self._extract_multimedia_features(record_dict, table)
-        print(record_dict)
-        #Ya con los features extraidos, insertamos en los indices
+
         for _, index in table.indexes.items():
-            if index is not None:
+            if index is not None and hasattr(index, 'add'):
                 index.add(record_dict)
+        return True
                 
 
 
@@ -437,7 +670,7 @@ class TableManager:
         table = self.tables[table_name]
 
         if where_condition:
-            filtered_dicts = self._execute_condition(table, where_condition)
+            filtered_dicts = self._execute_condition(table, where_condition, limit=limit)
         else:
             index = table.get_primary_index()
             filtered_dicts = index.getAllRecords()
@@ -478,13 +711,19 @@ class TableManager:
             raise ValueError(f"La tabla '{table_name}' no existe")
         table = self.tables[table_name]
 
+        for col_name, index in table.indexes.items():
+            if index is not None and not hasattr(index, 'remove'):
+                raise NotImplementedError(
+                    f"DELETE no soportado: la tabla '{table_name}' tiene índices multimedia que son solo lectura. "
+                    f"Los índices multimedia trabajan con colecciones pre-construidas."
+                )
+
         if where_condition is None:
+            deleted_count = 0
             for col_name, index in table.indexes.items():
-                if index is not None:
-                    deleted_count = index.clear_all();
-
+                if index is not None and hasattr(index, 'clear_all'):
+                    deleted_count = index.clear_all()
             return deleted_count
-
 
         records_to_delete = self._execute_condition(table, where_condition)
         deleted_count = 0
@@ -492,9 +731,8 @@ class TableManager:
         for record_dict in records_to_delete:
             deleted_count += 1
             for col_name, index in table.indexes.items():
-                if index is not None:
+                if index is not None and hasattr(index, 'remove'):
                     key = record_dict.get(col_name)
-                    # Para índices secundarios, pasar la primary key para eliminar solo ese registro específico
                     if not index.is_primary and table.key_column:
                         pk_value = record_dict.get(table.key_column)
                         index.remove(key, primary_key=pk_value)
@@ -506,7 +744,7 @@ class TableManager:
     Este es el core de la obtencion de registros con condiciones
     Dependiendo del tipo de condicion, se realiza la busqueda correspondiente
     '''
-    def _execute_condition(self, table: Table, condition: Condition) -> List:
+    def _execute_condition(self, table: Table, condition: Condition, limit: Optional[int] = None) -> List:
         if isinstance(condition, CompCond):
             return self._comparison_condition(table, condition)
 
@@ -518,6 +756,9 @@ class TableManager:
 
         elif isinstance(condition, SpatialKNNCond):
             return self._spatial_knn_condition(table, condition)
+
+        elif isinstance(condition, MultimediaKNNCond):
+            return self._multimedia_knn_condition(table, condition, limit)
 
         elif isinstance(condition, LogicCond):
             return self._logic_condition(table, condition)
@@ -564,7 +805,7 @@ class TableManager:
 
         try:
             if operator == "=":
-                index_results = index.search(search_value)
+                index_results = index.rangeSearch(search_value, search_value)
             elif operator == "<":
                 index_results = index.rangeSearch(None, search_value, begin_inclusive=True, end_inclusive=False)
             elif operator == "<=":
@@ -759,6 +1000,56 @@ class TableManager:
         except Exception:
             return []
 
+    def _multimedia_knn_condition(self, table: Table, condition: MultimediaKNNCond, limit: Optional[int] = None) -> List:
+        column_name = condition.column
+        query_path = condition.query_path
+        k = limit if limit is not None else 10
+
+        index = table.indexes.get(column_name)
+        if index is None:
+            raise ValueError(f"No existe índice KNN para la columna '{column_name}'")
+
+        if not hasattr(index, 'knnSearchByFile'):
+            raise ValueError(f"El índice de la columna '{column_name}' no soporta búsqueda KNN multimedia")
+
+        try:
+            results = index.knnSearchByFile(query_path, k)
+            records_with_distance = []
+            
+            num_expected_columns = len(table.columns)
+            primary_index = table.indexes.get(table.key_column)
+            
+            for record, distance in results:
+                # KNN siempre retorna 2 keys: 'id' + column_name 
+                num_record_columns = len([k for k in record.keys() if k != '_distance'])
+                is_partial = num_record_columns < num_expected_columns
+                
+                #Si es que el numero de columnas es menor al esperado, se asume que es un registro parcial
+                if is_partial and primary_index and table.key_column in record:
+                    # Buscamos en el primario para obtener el registro completo
+                    pk_value = record.get(table.key_column)
+                    # Usar rangeSearch en lugar de search (bug en BTree search)
+                    full_records = primary_index.rangeSearch(pk_value, pk_value)
+                    
+                    if full_records:
+                        full_record = full_records[0].copy()
+                        full_record['_distance'] = distance
+                        records_with_distance.append(full_record)
+                    else:
+                        # Si no se encuentra en primario usamos lo obtenido
+                        record_copy = record.copy()
+                        record_copy['_distance'] = distance
+                        records_with_distance.append(record_copy)
+                else:
+                    # El registro ya es completo
+                    record_copy = record.copy()
+                    record_copy['_distance'] = distance
+                    records_with_distance.append(record_copy)
+                    
+            return records_with_distance
+        except Exception as e:
+            raise ValueError(f"Error en búsqueda KNN multimedia: {str(e)}")
+
     '''
     Esta funcion se encarga de manejar las condiciones logicas AND y OR, de tal forma que podamos encadenar multiples
     condiciones en una sola consulta
@@ -782,6 +1073,9 @@ class TableManager:
             return union_results
 
         return []
+
+    def show_tables(self) -> List[str]:
+        return list(self.tables.keys())
 
     '''
     Retorna metadatos de todas las tablas existentes: nombre, columnas, indices y cantidad de registros
@@ -810,8 +1104,11 @@ class TableManager:
             # Obtener cantidad de registros del indice primario
             row_count = 0
             if table.key_column and table.key_column in table.indexes:
-                primary_index = table.indexes[table.key_column]
-                row_count = len(primary_index.getAllRecords())
+                try:
+                    primary_index = table.indexes[table.key_column]
+                    row_count = len(primary_index.getAllRecords())
+                except Exception as e:
+                    row_count = 0
 
             tables_metadata.append({
                 "name": table_name,
@@ -889,7 +1186,8 @@ class TableManager:
                     "element_type": col.element_type.value if col.element_type else None,
                     "is_key": col.is_key,
                     "index_type": col.index_type.value if col.index_type else None,
-                    "array_dimensions": col.array_dimensions
+                    "array_dimensions": col.array_dimensions,
+                    "index_options": col.index_options
                 }
                 columns_data.append(col_data)
 
@@ -923,7 +1221,8 @@ class TableManager:
                     element_type=DataType(col_data["element_type"]) if col_data.get("element_type") else None,
                     is_key=col_data.get("is_key", False),
                     index_type=IndexType(col_data["index_type"]) if col_data.get("index_type") else None,
-                    array_dimensions=col_data.get("array_dimensions")
+                    array_dimensions=col_data.get("array_dimensions"),
+                    index_options=col_data.get("index_options")
                 )
                 columns.append(col)
 
@@ -934,13 +1233,54 @@ class TableManager:
             for col in columns:
                 if col.index_type:
                     filename = os.path.join(self.indices_directory, f"{table_name}_{col.name}.dat")
+
+                    # Verificar si es índice KNN (por tipo de dato o por tipo de índice)
+                    is_knn_index = col.index_type in [IndexType.KNN_SEQ, IndexType.KNN_INV]
+                    is_multimedia_type = col.data_type in [DataType.IMAGE, DataType.AUDIO]
+
+                    if is_knn_index or is_multimedia_type:
+                        options = col.index_options or {}
+
+                        # Inferir extractor desde collection path
+                        if 'collection' in options:
+                            collection_path = options['collection']
+                            if any(ext in collection_path.lower() for ext in ['jpg', 'jpeg', 'png', 'image']):
+                                extractor = SIFTExtractor()
+                            else:
+                                extractor = MFCCExtractor() if MFCCExtractor else None
+
+                            vocabulary_size = options.get('k', 2000)
+
+                            pattern = os.path.join(
+                                self.indices_directory,
+                                f"{table_name}_{col.name}_*_k{vocabulary_size}_codebook.dat"
+                            )
+                            matches = glob.glob(pattern)
+                            if matches:
+                                codebook_file = matches[0]
+                            else:
+                                codebook_file = None
+                        else:
+                            vocabulary_size, codebook_file, extractor = self._get_multimedia_config(col, table_name)
+                    else:
+                        vocabulary_size, codebook_file, extractor = None, None, None
+
+                    # Extraer index_prefix si existe en options
+                    index_prefix = None
+                    if col.index_options and 'index_prefix' in col.index_options:
+                        index_prefix = col.index_options['index_prefix']
+
                     index = create_index(
                         index_type=col.index_type,
                         column_name=col.name,
                         filename=filename,
                         is_primary=col.is_key,
                         primary_key_column=primary_key_col if not col.is_key else None,
-                        table_schema=table.columns
+                        table_schema=table.columns,
+                        vocabulary_size=vocabulary_size,
+                        codebook_file=codebook_file,
+                        extractor=extractor,
+                        index_prefix=index_prefix
                     )
                     table.indexes[col.name] = index
 

@@ -183,7 +183,7 @@ class BTreeIndex(BaseIndex):
                 break
             current_pid = node.next_page
             node = self._get_page_by_id(current_pid)
-            i = 0
+            i = self._lower_bound(node.keys, node.count, lo)
 
         return out
 

@@ -11,6 +11,7 @@ services:
       - ./src:/app/src
       - ./api:/app/api
       - ./data:/app/data
+      - ./indices:/app/indices
       - bd2-api-data:/app/data/api
     environment:
       - PYTHONUNBUFFERED=1

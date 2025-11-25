@@ -106,15 +106,16 @@ class SQLParser:
         return CreateTableFileStmt(table_name, file_path, indexes)
 
     def _parse_index_specification(self, is_primary: bool) -> 'IndexSpec':
-        index_type, _ = self._parse_index_type()
+        index_type, index_options = self._parse_index_type()  # Capturar opciones
         if is_primary:
             if index_type not in [IndexType.SEQ, IndexType.ISAM, IndexType.BTREE]:
                 raise ParseError(f"El tipo de índice {index_type.value} no puede usarse como índice de clave primaria. "
                                  f"Solo SEQ, ISAM y BTREE están permitidos para columnas de clave primaria.")
         else:
-            if index_type not in [IndexType.HASH, IndexType.RTREE, IndexType.BTREE]:
+            # Permitir KNN_SEQ y KNN_INV en índices secundarios
+            if index_type not in [IndexType.HASH, IndexType.RTREE, IndexType.BTREE, IndexType.KNN_SEQ, IndexType.KNN_INV]:
                 raise ParseError(f"El tipo de índice {index_type.value} no puede usarse como índice secundario. "
-                                 f"Solo HASH, RTREE y BTREE están permitidos para índices secundarios.")
+                                 f"Solo HASH, RTREE, BTREE, KNN_SEQ, KNN_INV están permitidos para índices secundarios.")
 
         self._consume(TokenType.LPAREN, "Se esperaba '('")
 
@@ -127,7 +128,7 @@ class SQLParser:
 
         self._consume(TokenType.RPAREN, "Se esperaba ')'")
 
-        return IndexSpec(index_type, column_name, is_primary)
+        return IndexSpec(index_type, column_name, is_primary, index_options)  # Pasar opciones
     
     def _parse_column_definition(self) -> ColumnDef: # column_definition -> name data_type [KEY] [INDEX index_type[(options)]]
         name = self._consume(TokenType.ID, "Se esperaba nombre de columna").lexeme
@@ -216,9 +217,8 @@ class SQLParser:
         else:
             raise ParseError(f"Tipo de índice inesperado: {self._peek().lexeme}")
 
-        # Parsear opciones si existen: INDEX TYPE(param='value', param=number)
         index_options = None
-        if self._match(TokenType.LPAREN):
+        if index_type in [IndexType.KNN_SEQ, IndexType.KNN_INV] and self._match(TokenType.LPAREN):
             index_options = {}
             param_name = self._consume(TokenType.ID, "Se esperaba nombre de parámetro").lexeme
             self._consume(TokenType.EQUALS, "Se esperaba '='")

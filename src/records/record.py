@@ -28,14 +28,14 @@ class DynamicRecord:
 
             elif col.data_type.value == "IMAGE":
                 if isinstance(value, dict):
-                    tranfor_valor = value
+                    tranfor_valor = value['path']
                 else:
-                    tranfor_valor = {'path': str(value), 'features': [0.0]*128}
+                    tranfor_valor = str(value)
             elif col.data_type.value == "AUDIO":
                 if isinstance(value, dict):
-                    tranfor_valor = value 
+                    tranfor_valor = value['path']
                 else:
-                    tranfor_valor = {'path': str(value), 'features': [0.0]*25}
+                    tranfor_valor = str(value)
 
             elif col.data_type.value == "ARRAY":
                 if not isinstance(value, (list, tuple)):
@@ -71,19 +71,17 @@ class DynamicRecord:
             if col.data_type.value == "INT":
                 format_parts.append("i")
             elif col.data_type.value == "BIGINT":
-                format_parts.append("q")  # int64 (long long)
+                format_parts.append("q")
             elif col.data_type.value == "FLOAT":
                 format_parts.append("f")
             elif col.data_type.value == "VARCHAR":
                 format_parts.append(f"{col.size}s")
             elif col.data_type.value == "DATE":
-                format_parts.append("10s")  # YYYY-MM-DD
+                format_parts.append("10s")
             elif col.data_type.value == "IMAGE":
                 format_parts.append("200s")
-                format_parts.append("128f")
             elif col.data_type.value == "AUDIO":
                 format_parts.append("200s")
-                format_parts.append("25f")
             elif col.data_type.value == "ARRAY":
                 if col.element_type.value == "FLOAT":
                     format_parts.append(f"{col.array_dimensions}f")
@@ -92,7 +90,7 @@ class DynamicRecord:
                 else:
                     raise ValueError(f"Tipo de array no soportado: {col.element_type}")
         
-        format_parts.append("?") 
+        format_parts.append("?")
         return "".join(format_parts)
     
     def pack(self) -> bytes:
@@ -109,25 +107,12 @@ class DynamicRecord:
                 pack_values.append(encoded)
 
             elif col.data_type.value == "IMAGE":
-                if isinstance(value, dict):
-                    path = value['path']
-                    features = value.get('features', [0.0]*128)
-                else:
-                    path = str(value)
-                    features = [0.0]*128
-                encoded_path = path[:200].ljust(200).encode('utf-8', errors='replace')
+                encoded_path = value[:200].ljust(200).encode('utf-8', errors='replace')
                 pack_values.append(encoded_path)
-                pack_values.extend(features[:128])
+                
             elif col.data_type.value == "AUDIO":
-                if isinstance(value, dict):
-                    path = value['path']
-                    features = value.get('features', [0.0]*25)
-                else:
-                    path = str(value)
-                    features = [0.0]*25
-                encoded_path = path[:200].ljust(200).encode('utf-8', errors='replace')
+                encoded_path = value[:200].ljust(200).encode('utf-8', errors='replace')
                 pack_values.append(encoded_path)
-                pack_values.extend(features[:25])
             elif col.data_type.value == "ARRAY":
                 pack_values.extend(value)
             else:
@@ -153,21 +138,12 @@ class DynamicRecord:
                 value_index += 1
 
             elif col.data_type.value == "IMAGE":
-                path = unpacked[value_index].decode('utf-8', errors='replace').rstrip()
+                valores[col.name] = unpacked[value_index].decode('utf-8', errors='replace').rstrip()
                 value_index += 1
-                features = []
-                for _ in range(128):
-                    features.append(unpacked[value_index])
-                    value_index += 1
-                valores[col.name] = {'path': path, 'features': features}
+                
             elif col.data_type.value == "AUDIO":
-                path = unpacked[value_index].decode('utf-8', errors='replace').rstrip()
+                valores[col.name] = unpacked[value_index].decode('utf-8', errors='replace').rstrip()
                 value_index += 1
-                features = []
-                for _ in range(25):
-                    features.append(unpacked[value_index])
-                    value_index += 1
-                valores[col.name] = {'path': path, 'features': features}
             elif col.data_type.value == "ARRAY":
                 array_values = []
                 for _ in range(col.array_dimensions):

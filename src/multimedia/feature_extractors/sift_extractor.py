@@ -19,8 +19,6 @@ class SIFTExtractor(BaseFeatureExtractor):
         if image is None:
             raise ValueError(f"No se pudo leer la imagen: {file_path}")
 
-
-        # En caso que la imagen sea muy grande, redimensionar para poder procesar más rapido
         max_dim = 800
         h, w = image.shape[:2]
         if max(h, w) > max_dim:
@@ -28,7 +26,6 @@ class SIFTExtractor(BaseFeatureExtractor):
             new_w, new_h = int(w * scale), int(h * scale)
             image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-        # SIFT Solo funciona con imágenes en escala de grises
         if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:

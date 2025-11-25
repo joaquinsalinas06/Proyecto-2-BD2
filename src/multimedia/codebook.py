@@ -48,15 +48,15 @@ class Codebook:
         print(f"Codebook listo (k={self.k}, dim={self.dim})\n")
         sys.stdout.flush()
 
-    def compute_idf(self, all_histograms: List[np.ndarray], N: int):
-        self.N = N
+    def compute_idf(self, all_histograms: List[np.ndarray], num_docs: int):
+        self.N = num_docs
         df = np.zeros(self.k, dtype=np.float32)
 
         for histogram in all_histograms:
             present_words = histogram > 0
             df += present_words.astype(np.float32)
 
-        self.idf_values = np.log((N + 1) / (df + 1)) + 1
+        self.idf_values = np.log((num_docs + 1) / (df + 1)) + 1
         self.idf_values = self.idf_values.astype(np.float32)
 
         print(f"IDF calculado: {np.min(self.idf_values):.3f} - {np.max(self.idf_values):.3f}")
@@ -71,10 +71,7 @@ class Codebook:
         if self.kmeans is None:
             self._read_from_disk()
 
-        # Asignar cada descriptor al codeword más cercano 
         labels = self.kmeans.predict(descriptors)
-
-        # Histograma de frecuencias
         histogram = np.bincount(labels, minlength=self.k).astype(np.float32)
 
         if apply_tfidf:
@@ -83,15 +80,12 @@ class Codebook:
         return histogram
 
     def apply_tfidf_to_histogram(self, histogram: np.ndarray) -> np.ndarray:
-        # Normalizar TF: frecuencia / total
         total_words = histogram.sum()
         if total_words > 0:
             histogram = histogram / total_words
 
-        # Aplicar IDF
         histogram = histogram * self.idf_values
 
-        # Normalizamos con L2 para que todos los histogramas tengan la misma magnitud
         norm = np.linalg.norm(histogram)
         if norm > 0:
             histogram = histogram / norm
@@ -107,15 +101,12 @@ class Codebook:
             os.makedirs(directory, exist_ok=True)
 
         with open(filepath, 'wb') as f:
-            # Header: k, dim
             header = struct.pack('ii', self.k, self.dim)
             f.write(header)
 
-            # Codewords
             codewords_bytes = self.codewords.astype(np.float32).tobytes()
             f.write(codewords_bytes)
 
-            # IDF
             idf_bytes = self.idf_values.astype(np.float32).tobytes()
             f.write(idf_bytes)
         self.codewords = None
@@ -127,23 +118,19 @@ class Codebook:
             raise RuntimeError(f"Codebook no encontrado: {self.codebook_file}")
 
         with open(self.codebook_file, 'rb') as f:
-            # Header: k, dim
             header_bytes = f.read(8)
             k, dim = struct.unpack('ii', header_bytes)
 
             self.k = k
             self.dim = dim
 
-            # Codewords
             num_floats = k * dim
             codewords_bytes = f.read(num_floats * 4)
             codewords = np.frombuffer(codewords_bytes, dtype=np.float32).reshape(k, dim)
 
-            # IDF
             idf_bytes = f.read(k * 4)
             self.idf_values = np.frombuffer(idf_bytes, dtype=np.float32)
 
-        # Reconstruir kmeans
         self.kmeans = MiniBatchKMeans(n_clusters=self.k, random_state=42)
         self.kmeans.cluster_centers_ = codewords
 

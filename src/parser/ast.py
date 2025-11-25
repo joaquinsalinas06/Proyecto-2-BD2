@@ -118,6 +118,7 @@ class IndexSpec:
     index_type: IndexType
     column_name: str
     is_primary: bool = False
+    index_options: Optional[Dict[str, Any]] = None
 
 @dataclass
 class CreateTableFileStmt:
