@@ -25,21 +25,36 @@ class DynamicRecord:
 
             elif col.data_type.value == "DATE":
                 tranfor_valor = str(value)
-            
+
+            elif col.data_type.value == "IMAGE":
+                if isinstance(value, dict):
+                    tranfor_valor = value['path']
+                else:
+                    tranfor_valor = str(value)
+            elif col.data_type.value == "AUDIO":
+                if isinstance(value, dict):
+                    tranfor_valor = value['path']
+                else:
+                    tranfor_valor = str(value)
+
             elif col.data_type.value == "ARRAY":
                 if not isinstance(value, (list, tuple)):
                     raise ValueError(f"'{col.name}' debe ser array")
-                
+
                 if len(value) != col.array_dimensions:
                     raise ValueError(
                         f"Array '{col.name}' requiere {col.array_dimensions} elementos, "
                         f"recibió {len(value)}"
                     )
-                
+
                 if col.element_type.value == "FLOAT":
-                    tranfor_valor = [float(x) for x in value]
+                    tranfor_valor = []
+                    for x in value:
+                        tranfor_valor.append(float(x))
                 elif col.element_type.value == "INT":
-                    tranfor_valor = [int(x) for x in value]
+                    tranfor_valor = []
+                    for x in value:
+                        tranfor_valor.append(int(x))
                 else:
                     tranfor_valor = list(value)
 
@@ -56,13 +71,17 @@ class DynamicRecord:
             if col.data_type.value == "INT":
                 format_parts.append("i")
             elif col.data_type.value == "BIGINT":
-                format_parts.append("q")  # int64 (long long)
+                format_parts.append("q")
             elif col.data_type.value == "FLOAT":
                 format_parts.append("f")
             elif col.data_type.value == "VARCHAR":
                 format_parts.append(f"{col.size}s")
             elif col.data_type.value == "DATE":
-                format_parts.append("10s")  # YYYY-MM-DD
+                format_parts.append("10s")
+            elif col.data_type.value == "IMAGE":
+                format_parts.append("200s")
+            elif col.data_type.value == "AUDIO":
+                format_parts.append("200s")
             elif col.data_type.value == "ARRAY":
                 if col.element_type.value == "FLOAT":
                     format_parts.append(f"{col.array_dimensions}f")
@@ -71,12 +90,12 @@ class DynamicRecord:
                 else:
                     raise ValueError(f"Tipo de array no soportado: {col.element_type}")
         
-        format_parts.append("?") 
+        format_parts.append("?")
         return "".join(format_parts)
     
     def pack(self) -> bytes:
         pack_values = []
-        
+
         for col in self.schema:
             value = getattr(self, col.name)
             
@@ -86,6 +105,14 @@ class DynamicRecord:
             elif col.data_type.value == "DATE":
                 encoded = value[:10].ljust(10).encode('utf-8', errors='replace')
                 pack_values.append(encoded)
+
+            elif col.data_type.value == "IMAGE":
+                encoded_path = value[:200].ljust(200).encode('utf-8', errors='replace')
+                pack_values.append(encoded_path)
+                
+            elif col.data_type.value == "AUDIO":
+                encoded_path = value[:200].ljust(200).encode('utf-8', errors='replace')
+                pack_values.append(encoded_path)
             elif col.data_type.value == "ARRAY":
                 pack_values.extend(value)
             else:
@@ -101,12 +128,20 @@ class DynamicRecord:
 
         valores = {}
         value_index = 0
-        
+
         for col in table_schema:
             if col.data_type.value == "VARCHAR":
                 valores[col.name] = unpacked[value_index].decode('utf-8', errors='replace').rstrip()
                 value_index += 1
             elif col.data_type.value == "DATE":
+                valores[col.name] = unpacked[value_index].decode('utf-8', errors='replace').rstrip()
+                value_index += 1
+
+            elif col.data_type.value == "IMAGE":
+                valores[col.name] = unpacked[value_index].decode('utf-8', errors='replace').rstrip()
+                value_index += 1
+                
+            elif col.data_type.value == "AUDIO":
                 valores[col.name] = unpacked[value_index].decode('utf-8', errors='replace').rstrip()
                 value_index += 1
             elif col.data_type.value == "ARRAY":

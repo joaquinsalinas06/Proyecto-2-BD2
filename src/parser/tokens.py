@@ -36,17 +36,22 @@ class TokenType(Enum):
     VARCHAR = "VARCHAR"
     DATE_TYPE = "DATE"
     ARRAY = "ARRAY"
+    IMAGE = "IMAGE"
+    AUDIO = "AUDIO"
     SEQ = "SEQ"
     BTREE = "BTREE"
     HASH = "HASH"
     ISAM = "ISAM"
     RTREE = "RTREE"
+    KNN_SEQ = "KNN_SEQ"
+    KNN_INV = "KNN_INV"
     EQUALS = "="
     NOT_EQUALS = "!="
     LESS_THAN = "<"
     LESS_EQUALS = "<="
     GREATER_THAN = ">"
     GREATER_EQUALS = ">="
+    KNN_OP = "<->"
     LPAREN = "("
     RPAREN = ")"
     LBRACKET = "["
@@ -101,9 +106,13 @@ KEYWORDS = {
     'VARCHAR': TokenType.VARCHAR,
     'DATE': TokenType.DATE_TYPE,
     'ARRAY': TokenType.ARRAY,
+    'IMAGE': TokenType.IMAGE,
+    'AUDIO': TokenType.AUDIO,
     'SEQ': TokenType.SEQ,
     'BTREE': TokenType.BTREE,
     'HASH': TokenType.HASH,
     'ISAM': TokenType.ISAM,
     'RTREE': TokenType.RTREE,
+    'KNN_SEQ': TokenType.KNN_SEQ,
+    'KNN_INV': TokenType.KNN_INV,
 }

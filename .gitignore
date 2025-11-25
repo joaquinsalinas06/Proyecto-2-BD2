@@ -16,12 +16,8 @@ venv/
 !data/benchmarks/*.csv
 data/spotify/*
 
-data/test/
-data/benchmarks/indices/
-data/benchmarks/temp/
-data/benchmarks/.temp_*
+*data/
 
-# Legacy indices folder (if still exists)
 indices/
 
 *.dat

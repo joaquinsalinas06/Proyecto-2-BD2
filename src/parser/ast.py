@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Union, Any, Dict
 from enum import Enum
 
 
@@ -10,6 +10,8 @@ class DataType(Enum):
     VARCHAR = "VARCHAR"
     DATE = "DATE"
     ARRAY = "ARRAY"
+    IMAGE = "IMAGE"
+    AUDIO = "AUDIO"
 
 
 class IndexType(Enum):
@@ -18,6 +20,8 @@ class IndexType(Enum):
     HASH = "HASH"
     ISAM = "ISAM"
     RTREE = "RTREE"
+    KNN_SEQ = "KNN_SEQ"
+    KNN_INV = "KNN_INV"
 
 
 class CompOp(Enum):
@@ -38,11 +42,13 @@ class LogicOp(Enum):
 class ColumnDef:
     name: str
     data_type: DataType
-    size: Optional[int] = None 
+    size: Optional[int] = None
     element_type: Optional[DataType] = None
     is_key: bool = False
     index_type: Optional[IndexType] = None
     array_dimensions: Optional[int] = None
+    index_options: Optional[Dict[str, Any]] = None
+    vocabulary_size: Optional[int] = None
 
 
 @dataclass
@@ -79,6 +85,12 @@ class SpatialKNNCond:
 
 
 @dataclass
+class MultimediaKNNCond:
+    column: str
+    query_path: str
+
+
+@dataclass
 class LogicCond:
     left: 'Condition'
     operator: LogicOp
@@ -91,6 +103,7 @@ Condition = Union[
     BetweenCond,
     SpatialInCond,
     SpatialKNNCond,
+    MultimediaKNNCond,
     LogicCond
 ]
 
@@ -105,6 +118,7 @@ class IndexSpec:
     index_type: IndexType
     column_name: str
     is_primary: bool = False
+    index_options: Optional[Dict[str, Any]] = None
 
 @dataclass
 class CreateTableFileStmt:

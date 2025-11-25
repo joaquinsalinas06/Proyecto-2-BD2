@@ -106,15 +106,16 @@ class SQLParser:
         return CreateTableFileStmt(table_name, file_path, indexes)
 
     def _parse_index_specification(self, is_primary: bool) -> 'IndexSpec':
-        index_type = self._parse_index_type()
+        index_type, index_options = self._parse_index_type()  # Capturar opciones
         if is_primary:
             if index_type not in [IndexType.SEQ, IndexType.ISAM, IndexType.BTREE]:
                 raise ParseError(f"El tipo de índice {index_type.value} no puede usarse como índice de clave primaria. "
                                  f"Solo SEQ, ISAM y BTREE están permitidos para columnas de clave primaria.")
         else:
-            if index_type not in [IndexType.HASH, IndexType.RTREE, IndexType.BTREE]:
+            # Permitir KNN_SEQ y KNN_INV en índices secundarios
+            if index_type not in [IndexType.HASH, IndexType.RTREE, IndexType.BTREE, IndexType.KNN_SEQ, IndexType.KNN_INV]:
                 raise ParseError(f"El tipo de índice {index_type.value} no puede usarse como índice secundario. "
-                                 f"Solo HASH, RTREE y BTREE están permitidos para índices secundarios.")
+                                 f"Solo HASH, RTREE, BTREE, KNN_SEQ, KNN_INV están permitidos para índices secundarios.")
 
         self._consume(TokenType.LPAREN, "Se esperaba '('")
 
@@ -127,27 +128,29 @@ class SQLParser:
 
         self._consume(TokenType.RPAREN, "Se esperaba ')'")
 
-        return IndexSpec(index_type, column_name, is_primary)
+        return IndexSpec(index_type, column_name, is_primary, index_options)  # Pasar opciones
     
-    def _parse_column_definition(self) -> ColumnDef: # column_definition -> name data_type [KEY] [INDEX index_type]
+    def _parse_column_definition(self) -> ColumnDef: # column_definition -> name data_type [KEY] [INDEX index_type[(options)]]
         name = self._consume(TokenType.ID, "Se esperaba nombre de columna").lexeme
         data_type, size, element_type = self._parse_data_type()
-        
+
         is_key = False
         if self._match(TokenType.KEY):
             is_key = True
-        
+
         index_type = None
+        index_options = None
         if self._match(TokenType.INDEX):
-            index_type = self._parse_index_type()
+            index_type, index_options = self._parse_index_type()
             if is_key:
                 if index_type not in [IndexType.SEQ, IndexType.ISAM, IndexType.BTREE]:
                     raise ParseError(f"Index type {index_type.value} cannot be used as primary key index. "
                                 f"Only SEQ, ISAM, and BTREE are allowed for primary key columns.")
             else:
-                if index_type not in [IndexType.HASH, IndexType.RTREE, IndexType.BTREE]:
+                allowed_secondary = [IndexType.HASH, IndexType.RTREE, IndexType.BTREE, IndexType.KNN_SEQ, IndexType.KNN_INV]
+                if index_type not in allowed_secondary:
                     raise ParseError(f"Index type {index_type.value} cannot be used as secondary index. "
-                                f"Only HASH, RTREE, and BTREE are allowed for secondary indexes.")
+                                f"Allowed: HASH, RTREE, BTREE, KNN_SEQ, KNN_INV")
 
         if data_type == DataType.ARRAY:
             array_dimensions = size
@@ -155,10 +158,10 @@ class SQLParser:
         else:
             array_dimensions = None
 
-        return ColumnDef(name, data_type, size, element_type, is_key, index_type, array_dimensions)
+        return ColumnDef(name, data_type, size, element_type, is_key, index_type, array_dimensions, index_options)
     
-    def _parse_data_type(self) -> tuple[DataType, Optional[int], Optional[DataType]]: # data_type -> INT | FLOAT | DATE | VARCHAR[size] | ARRAY[dimension][base_data_type]
-        
+    def _parse_data_type(self) -> tuple[DataType, Optional[int], Optional[DataType]]: # data_type -> INT | FLOAT | DATE | VARCHAR[size] | ARRAY[dimension][base_data_type] | IMAGE | AUDIO 
+
         if self._match(TokenType.INT):
             return DataType.INT, None, None
         elif self._match(TokenType.FLOAT_TYPE):
@@ -170,6 +173,10 @@ class SQLParser:
             size = self._consume(TokenType.INTEGER, "Se esperaba tamaño").lexeme
             self._consume(TokenType.RBRACKET, "Se esperaba ']'")
             return DataType.VARCHAR, int(size), None
+        elif self._match(TokenType.IMAGE):
+            return DataType.IMAGE, 200, None
+        elif self._match(TokenType.AUDIO):
+            return DataType.AUDIO, 200, None
         elif self._match(TokenType.ARRAY):
             self._consume(TokenType.LBRACKET, "Se esperaba '['")
             dimension = int(self._consume(TokenType.INTEGER, "Se esperaba dimensión del array").lexeme)
@@ -185,25 +192,63 @@ class SQLParser:
                 element_type = DataType.DATE
             else:
                 raise ParseError(f"Tipo base inesperado: {self._peek().lexeme}")
-            
+
             self._consume(TokenType.RBRACKET, "Se esperaba ']'")
             return DataType.ARRAY, dimension, element_type
         else:
             raise ParseError(f"Tipo de dato inesperado: {self._peek().lexeme}")
    
-    def _parse_index_type(self) -> IndexType: # index_type -> SEQ | BTREE | HASH | ISAM | RTREE
+    def _parse_index_type(self) -> tuple[IndexType, Optional[dict]]:
+        index_type = None
         if self._match(TokenType.SEQ):
-            return IndexType.SEQ
+            index_type = IndexType.SEQ
         elif self._match(TokenType.BTREE):
-            return IndexType.BTREE
+            index_type = IndexType.BTREE
         elif self._match(TokenType.HASH):
-            return IndexType.HASH
+            index_type = IndexType.HASH
         elif self._match(TokenType.ISAM):
-            return IndexType.ISAM
+            index_type = IndexType.ISAM
         elif self._match(TokenType.RTREE):
-            return IndexType.RTREE
+            index_type = IndexType.RTREE
+        elif self._match(TokenType.KNN_SEQ):
+            index_type = IndexType.KNN_SEQ
+        elif self._match(TokenType.KNN_INV):
+            index_type = IndexType.KNN_INV
         else:
             raise ParseError(f"Tipo de índice inesperado: {self._peek().lexeme}")
+
+        index_options = None
+        if index_type in [IndexType.KNN_SEQ, IndexType.KNN_INV] and self._match(TokenType.LPAREN):
+            index_options = {}
+            param_name = self._consume(TokenType.ID, "Se esperaba nombre de parámetro").lexeme
+            self._consume(TokenType.EQUALS, "Se esperaba '='")
+
+            if self._check(TokenType.STRING):
+                param_value = self._consume(TokenType.STRING, "Se esperaba valor").lexeme
+            elif self._check(TokenType.INTEGER):
+                param_value = int(self._consume(TokenType.INTEGER, "Se esperaba valor").lexeme)
+            else:
+                raise ParseError(f"Tipo de valor inesperado para parámetro: {self._peek().lexeme}")
+
+            index_options[param_name] = param_value
+
+            # Parametros adicionales
+            while self._match(TokenType.COMMA):
+                param_name = self._consume(TokenType.ID, "Se esperaba nombre de parámetro").lexeme
+                self._consume(TokenType.EQUALS, "Se esperaba '='")
+
+                if self._check(TokenType.STRING):
+                    param_value = self._consume(TokenType.STRING, "Se esperaba valor").lexeme
+                elif self._check(TokenType.INTEGER):
+                    param_value = int(self._consume(TokenType.INTEGER, "Se esperaba valor").lexeme)
+                else:
+                    raise ParseError(f"Tipo de valor inesperado para parámetro: {self._peek().lexeme}")
+
+                index_options[param_name] = param_value
+
+            self._consume(TokenType.RPAREN, "Se esperaba ')'")
+
+        return index_type, index_options
     
     def _parse_select_statement(self) -> SelectStmt: # select_statement -> SELECT column_list FROM table_name [WHERE condition] [ORDER BY column [ASC|DESC]] [LIMIT number]
         self._consume(TokenType.SELECT, "Se esperaba 'SELECT'")
@@ -305,13 +350,15 @@ class SQLParser:
             return condition
 
         column = self._consume(TokenType.ID, "Se esperaba nombre de columna").lexeme
-        
+
         if self._match(TokenType.BETWEEN):
             return self._parse_between_condition(column)
         elif self._check(TokenType.IN):
             return self._parse_spatial_in_condition(column)
         elif self._check(TokenType.KNN):
             return self._parse_spatial_knn_condition(column)
+        elif self._check(TokenType.KNN_OP):
+            return self._parse_multimedia_knn_condition(column)
         else:
             return self._parse_comparison_condition(column)
     
@@ -356,16 +403,23 @@ class SQLParser:
     def _parse_spatial_knn_condition(self, column: str) -> SpatialKNNCond:
         self._consume(TokenType.KNN, "Se esperaba 'KNN'")
         self._consume(TokenType.LPAREN, "Se esperaba '('")
-        
+
         point = self._parse_point()
         self._consume(TokenType.COMMA, "Se esperaba ','")
-        
+
         k = int(self._consume(TokenType.INTEGER, "Se esperaba número entero").lexeme)
-        
+
         self._consume(TokenType.RPAREN, "Se esperaba ')'")
-        
+
         return SpatialKNNCond(column, point, k)
-    
+
+
+    def _parse_multimedia_knn_condition(self, column: str) -> 'MultimediaKNNCond':
+        self._consume(TokenType.KNN_OP, "Se esperaba '<->'")
+        query_path = self._consume(TokenType.STRING, "Se esperaba ruta de archivo").lexeme
+        return MultimediaKNNCond(column, query_path)
+
+
     def _parse_value(self) -> Value: # value -> number | string | array | point
         if self._check(TokenType.INTEGER) or self._check(TokenType.FLOAT):
             token = self._consume_number("Se esperaba número")

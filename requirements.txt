@@ -4,3 +4,14 @@ uvicorn
 pydantic
 requests
 pandas
+
+opencv-contrib-python
+librosa
+soundfile
+scikit-learn
+numpy
+matplotlib
+
+nltk
+
+python-multipart 
