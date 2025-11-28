@@ -13,12 +13,12 @@ venv/
 *.DS_Store
 
 *.csv
+!spotify_millsongdata.csv
 !data/benchmarks/*.csv
 data/spotify/*
 
 *data/
 
-indices/
 
 *.dat
 *.idx
