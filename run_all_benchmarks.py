@@ -1,28 +1,20 @@
 #!/usr/bin/env python
-"""
-Script para ejecutar todos los benchmarks de KNN Fashion de forma secuencial.
-Útil para comparar ambos métodos con los mismos parámetros.
-"""
+
 import sys
 import subprocess
 import os
 
 
 def run_command(cmd, description):
-    """Ejecuta un comando y maneja errores."""
     print("\n" + "="*60)
     print(f"{description}")
     print("="*60)
     print(f"Comando: {' '.join(cmd)}\n")
     
-    try:
-        result = subprocess.run(cmd, check=True)
-        print(f"\n✓ {description} completado")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"\n✗ Error en {description}")
-        print(f"Código de salida: {e.returncode}")
-        return False
+
+    result = subprocess.run(cmd, check=True)
+    print(f"\n {description} completado")
+    return True
 
 
 def main():
@@ -81,10 +73,9 @@ def main():
     # Resumen final
     print("\n" + "="*60)
     if success:
-        print("✓ Todos los benchmarks completados exitosamente")
+        print("todos los benchmarks completados exitosamente")
     else:
-        print("✗ Algunos benchmarks fallaron")
-    print("="*60)
+        print("Algunos benchmarks fallaron")
     
     return 0 if success else 1
 
