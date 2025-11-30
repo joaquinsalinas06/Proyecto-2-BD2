@@ -1,6 +1,8 @@
 import sys
 import os
+import csv
 
+file_path = "spotify_songs_cleaned.csv"
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
@@ -10,64 +12,85 @@ if __name__ == "__main__":
     print("TEST: Índice Invertido (TEX_INV)")
     print("=" * 60)
 
+    fin = int(input("Ingrese cantidad de registros a leer: "))
+    canciones = []
+
+    print(f"\nLeyendo primeros {fin} registros del CSV...\n")
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            
+            for i, row in enumerate(reader):
+                if i >= fin:  # Detener cuando se alcance el límite
+                    break
+                
+                # Extraer los datos (ajusta los nombres de columnas según tu CSV)
+                id_val = i + 1
+                artista = row.get('artist', '').replace("'", "''")  # Escapar comillas
+                cancion = row.get('song', '').replace("'", "''")
+                link = row.get('link', '').replace("'", "''")
+                texto = row.get('lyrics', '').replace("'", "''")  # ← CAMBIO: era genero, debe ser texto
+                
+                # Agregar a la lista
+                canciones.append((id_val, artista, cancion, link, texto))
+        
+        print(f"✓ Se cargaron {len(canciones)} canciones\n")
+
+    except FileNotFoundError:
+        print(f"Error: No se encontró el archivo '{file_path}'")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error al procesar el archivo: {e}")
+        sys.exit(1)
+
     tm = TableManager()
     
     print("\n1. Creando tabla con índice BTREE en la clave primaria...")
     sql = """
     CREATE TABLE canciones (
         id INT KEY INDEX BTREE,
-        artista VARCHAR[100],
-        cancion VARCHAR[200],
-        genero VARCHAR[50]
+        artist VARCHAR[100],
+        song VARCHAR[200],
+        link VARCHAR[50],
+        texto VARCHAR[500]
     );
     """
     tm.sql(sql)
     print("   ✓ Tabla creada\n")
 
     print("2. Insertando canciones...")
-    canciones = [
-        (1, "The Beatles", "Hey Jude", "Rock"),
-        (2, "The Beatles", "Let It Be", "Rock"),
-        (3, "Queen", "Bohemian Rhapsody", "Rock"),
-        (4, "David Bowie", "Space Oddity", "Rock"),
-        (5, "Queen", "Another One Bites the Dust", "Rock"),
-        (6, "The Who", "My Generation", "Rock"),
-        (7, "Led Zeppelin", "Stairway to Heaven", "Rock"),
-        (8, "Jimi Hendrix", "Purple Haze", "Rock"),
-        (9, "The Rolling Stones", "Paint It Black", "Rock"),
-        (10, "Black Sabbath", "Paranoid", "Heavy Metal"),
-        (11, "Iron Maiden", "Number of the Beast", "Heavy Metal"),
-        (12, "Metallica", "Enter Sandman", "Heavy Metal"),
-        (13, "Slayer", "Raining Blood", "Heavy Metal"),
-        (14, "Judas Priest", "Breaking the Law", "Heavy Metal"),
-        (15, "Ozzy Osbourne", "Crazy Train", "Heavy Metal"),
-        (16, "Radiohead", "Creep", "Alternative"),
-        (17, "Nirvana", "Smells Like Teen Spirit", "Grunge"),
-        (18, "Pearl Jam", "Black", "Grunge"),
-        (19, "Soundgarden", "Black Hole Sun", "Grunge"),
-        (20, "Alice in Chains", "Man in the Box", "Grunge"),
-    ]
     
-    for id_val, artista, cancion, genero in canciones:
-        tm.sql(f"INSERT INTO canciones VALUES ({id_val}, '{artista}', '{cancion}', '{genero}');")
+    # ← CAMBIO: iterar correctamente sobre la tupla de 5 elementos
+    for id_val, artista, cancion, link, texto in canciones:
+        query = f"INSERT INTO canciones VALUES ({id_val}, '{artista}', '{cancion}', '{link}', '{texto}');"
+        tm.sql(query)
     
     print(f"   ✓ Insertadas {len(canciones)} canciones\n")
    
-    print("3. Construyendo índice invertido en 'cancion'...")
-    tm.sql("BUILD TEX_INV ON canciones(cancion);")
+    print("3. Construyendo índice invertido en 'texto'...")
+    # ← CAMBIO: BUILD en la columna 'texto', no 'song'
+    tm.sql("BUILD TEX_INV ON canciones(texto);")
     print("   ✓ Índice TEX_INV construido\n")
     
-    print("4. Buscando canciones similares a 'Hey")
+    print("4. Buscando canciones similares a 'losing'...")
+    # ← CAMBIO: query correcta con nombres de columnas correctos
     results = tm.sql("""
-    SELECT artista, cancion, genero FROM canciones    
-    WHERE cancion @@ 'Hey'   
+    SELECT artist, song, texto FROM canciones    
+    WHERE texto @@ 'losing'   
     LIMIT 9;
     """)
     
-
-    
-    for i, row in enumerate(results[0]['data'], 1):
-        print(f"{i}. {row['artista']} - {row['cancion']} ({row['genero']})")
-    
     print(f"\n{'='*60}")
+    print(f"Resultados ({len(results[0]['data'])} canciones):")
+    print(f"{'='*60}\n")
+    
+    # ← CAMBIO: nombres de columnas correctos (artist, song, texto)
+    for i, row in enumerate(results[0]['data'], 1):
+        score = row.get('_score', 0)
+        print(f"{i}. {row['artist']} - {row['song']}")
+        print(f"   Texto: {row['texto'][:100]}...")
+        print(f"   Score: {score:.4f}\n")
+    
+    print(f"{'='*60}")
     print("✓ Test completado exitosamente")
