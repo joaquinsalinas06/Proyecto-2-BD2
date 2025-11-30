@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import axios from "axios"
-import { Sidebar } from "@/components/sidebar"
+import { Sidebar, UploadedFile } from "@/components/sidebar"
 import { QueryEditor } from "@/components/query-editor"
 import { ResultsSection } from "@/components/results-section"
 import { TableDetails } from "@/components/table-details"
@@ -14,7 +14,7 @@ export default function SQLEditor() {
   const [results, setResults] = useState<Record<string, any>[]>([])
   const [queryMetadata, setQueryMetadata] = useState<any>(null)
   const [selectedTable, setSelectedTable] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<"queries" | "tables">("queries")
+  const [activeTab, setActiveTab] = useState<"queries" | "tables" | "files">("queries")
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -22,10 +22,14 @@ export default function SQLEditor() {
   const [loadingTableDetails, setLoadingTableDetails] = useState(false)
   const [tables, setTables] = useState<string[]>([])
   const [queryHistory, setQueryHistory] = useState<any[]>([])
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [columnTypes, setColumnTypes] = useState<Record<string, string> | null>(null)
 
   useEffect(() => {
     fetchTables()
     fetchHistory()
+    fetchUploadedFiles()
   }, [])
 
   const fetchTables = async () => {
@@ -52,6 +56,56 @@ export default function SQLEditor() {
     } catch (err) {
       console.error("Error fetching history:", err)
     }
+  }
+
+  const fetchUploadedFiles = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/uploads`)
+      if (response.data.files) {
+        setUploadedFiles(response.data.files)
+      }
+    } catch (err) {
+      console.error("Error fetching uploaded files:", err)
+    }
+  }
+
+  const handleFileUpload = async (file: File) => {
+    const formData = new FormData()
+    formData.append("file", file)
+
+    try {
+      const response = await axios.post(`${API_BASE_URL}/uploads`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data"
+        }
+      })
+
+      if (response.data.success) {
+        fetchUploadedFiles()
+      }
+    } catch (err: any) {
+      console.error("Error uploading file:", err)
+      const errorMsg = err.response?.data?.detail || "Error al subir archivo"
+      setError(errorMsg)
+    }
+  }
+
+  const handleFileDelete = async (fileId: string) => {
+    try {
+      await axios.delete(`${API_BASE_URL}/uploads/${fileId}`)
+      fetchUploadedFiles()
+      // Clear selection if deleted file was selected
+      const deletedFile = uploadedFiles.find(f => f.id === fileId)
+      if (deletedFile && selectedFile === deletedFile.path) {
+        setSelectedFile(null)
+      }
+    } catch (err) {
+      console.error("Error deleting file:", err)
+    }
+  }
+
+  const handleFileSelect = (filePath: string) => {
+    setSelectedFile(selectedFile === filePath ? null : filePath)
   }
 
   const handleQueryChange = (query: string) => {
@@ -85,6 +139,8 @@ export default function SQLEditor() {
           affectedRows: response.data.affected_rows,
           metadata: response.data.metadata
         })
+        // Guardar tipos de columnas para renderizado multimedia
+        setColumnTypes(response.data.column_types || null)
         fetchHistory()
         fetchTables()
       } else {
@@ -162,6 +218,11 @@ export default function SQLEditor() {
         selectedTable={selectedTable}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        uploadedFiles={uploadedFiles}
+        onFileUpload={handleFileUpload}
+        onFileDelete={handleFileDelete}
+        onFileSelect={handleFileSelect}
+        selectedFile={selectedFile}
       />
 
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -180,12 +241,14 @@ export default function SQLEditor() {
                 onQueryChange={handleQueryChange}
                 onExecute={handleExecuteQuery}
                 isLoading={isLoading}
+                selectedFile={selectedFile}
               />
               <ResultsSection
                 results={results}
                 isLoading={isLoading}
                 error={error}
                 metadata={queryMetadata}
+                columnTypes={columnTypes}
               />
             </div>
           </div>

@@ -15,6 +15,7 @@ class QueryResponse(BaseModel):
     execution_time_ms: Optional[float] = None
     affected_rows: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
+    column_types: Optional[Dict[str, str]] = None  # {"column_name": "IMAGE|AUDIO|INT|VARCHAR..."}
 
 class ColumnInfo(BaseModel):
     name: str
@@ -47,3 +48,24 @@ class QueryHistoryItem(BaseModel):
 
 class QueryHistoryResponse(BaseModel):
     history: List[QueryHistoryItem]
+
+
+# Modelos para gestión de archivos multimedia
+class UploadedFile(BaseModel):
+    id: str
+    name: str
+    path: str
+    type: str  # "IMAGE" o "AUDIO"
+    size: int
+    uploaded_at: str
+    preview_url: str
+
+
+class UploadedFilesResponse(BaseModel):
+    files: List[UploadedFile]
+
+
+class UploadResponse(BaseModel):
+    success: bool
+    file: Optional[UploadedFile] = None
+    message: Optional[str] = None
