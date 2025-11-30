@@ -1,15 +1,17 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { MediaCell, DistanceIndicator } from "./media-components"
 
 interface ResultsSectionProps {
   results: Record<string, any>[]
   isLoading?: boolean
   error?: string | null
   metadata?: any
+  columnTypes?: Record<string, string> | null
 }
 
-export function ResultsSection({ results, isLoading = false, error = null, metadata = null }: ResultsSectionProps) {
+export function ResultsSection({ results, isLoading = false, error = null, metadata = null, columnTypes = null }: ResultsSectionProps) {
   const [activeTab, setActiveTab] = useState<"results" | "answer">("results")
 
   // Si es que hay metadata nueva, cambiar la pestaña activa según el tipo de consulta y resultados
@@ -85,32 +87,54 @@ export function ResultsSection({ results, isLoading = false, error = null, metad
                 <table className="min-w-full divide-y" style={{ backgroundColor: "#1a2b33" }}>
                   <thead style={{ backgroundColor: "#2a3b43" }}>
                     <tr>
-                      {columns.map((column) => (
-                        <th
-                          key={column}
-                          scope="col"
-                          className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
-                          style={{ color: "#9ca3af" }}
-                        >
-                          {column}
-                        </th>
-                      ))}
+                      {columns.map((column) => {
+                        // Cambiar el nombre de _distance a "Similitud"
+                        const displayName = column === "_distance" ? "Similitud" : column
+                        
+                        return (
+                          <th
+                            key={column}
+                            scope="col"
+                            className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider"
+                            style={{ color: "#9ca3af" }}
+                          >
+                            {displayName}
+                          </th>
+                        )
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y" style={{ backgroundColor: "#1a2b33", borderColor: "#2a3b43" }}>
                     {results.map((row, index) => (
                       <tr key={index}>
-                        {columns.map((column, colIndex) => (
-                          <td
-                            key={column}
-                            className={`whitespace-nowrap px-6 py-4 text-sm ${colIndex === 0 ? "font-medium" : ""}`}
-                            style={{
-                              color: colIndex === 0 ? "#e5e7eb" : "#9ca3af",
-                            }}
-                          >
-                            {row[column]}
-                          </td>
-                        ))}
+                        {columns.map((column, colIndex) => {
+                          const value = row[column]
+                          const colType = columnTypes?.[column]
+                          const isMediaColumn = colType === "IMAGE" || colType === "AUDIO"
+                          const isDistanceColumn = column.toLowerCase() === "distance" || column.toLowerCase() === "distancia" || column.toLowerCase() === "_distance"
+
+                          return (
+                            <td
+                              key={column}
+                              className={`px-6 py-4 text-sm ${colIndex === 0 ? "font-medium" : ""} ${isMediaColumn ? "" : "whitespace-nowrap"}`}
+                              style={{
+                                color: colIndex === 0 ? "#e5e7eb" : "#9ca3af",
+                              }}
+                            >
+                              {isMediaColumn ? (
+                                <MediaCell value={value} columnType={colType} />
+                              ) : isDistanceColumn && typeof value === "number" ? (
+                                <DistanceIndicator distance={value} />
+                              ) : typeof value === "object" && value !== null ? (
+                                <span className="text-xs text-gray-400 truncate max-w-[200px] block" title={JSON.stringify(value)}>
+                                  {value.path || JSON.stringify(value)}
+                                </span>
+                              ) : (
+                                value
+                              )}
+                            </td>
+                          )
+                        })}
                       </tr>
                     ))}
                   </tbody>
