@@ -1,6 +1,6 @@
-from inverted_index import InvertedFile, BType, BUCKET_LIMIT, _estimate_bytes_for_record
-from document_file import DocumentFile
-from utils.text_utils import bow  # bow: str -> Dict[str, int]
+from .inverted_index import InvertedFile, BType, BUCKET_LIMIT, _estimate_bytes_for_record
+from .document_file import DocumentFile
+from .utils.text_utils import bow  # bow: str -> Dict[str, int]
 
 class TextIndexer:
 

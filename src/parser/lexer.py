@@ -33,6 +33,7 @@ class Lexer:
             return
         
         # Operadores de comparación
+        
         if char == '=':
             self._add_token(TokenType.EQUALS)
         elif char == '!':
@@ -40,6 +41,12 @@ class Lexer:
                 self._add_token(TokenType.NOT_EQUALS)
             else:
                 raise LexerError(f"Carácter inesperado '!' en línea {self.line}")
+        elif char == '@':
+            if self._match('@'):
+                self._add_token(TokenType.MATCHES)  # @@
+            else:
+                raise LexerError(f"Carácter inesperado '@' en línea {self.line}") 
+    
         elif char == '<':
             if self._match('-'):
                 if self._match('>'):

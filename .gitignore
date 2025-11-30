@@ -26,3 +26,4 @@ data/spotify/*
 **/tables_metadata.json
 
 env2/Scripts/python.exe
+/env2
