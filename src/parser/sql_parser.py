@@ -50,8 +50,25 @@ class SQLParser:
             return self._parse_insert_statement()
         elif self._check(TokenType.DELETE):
             return self._parse_delete_statement()
+        elif self._check(TokenType.BUILD):  # imv  
+            return self._parse_build_tex_inv_statement()
         else:
             raise ParseError(f"Sentencia inesperada: {self._peek().lexeme}")
+        
+
+    def _parse_build_tex_inv_statement(self) -> BuildTexInvStmt:
+        """BUILD TEX_INV ON tabla(columna);"""
+        self._consume(TokenType.BUILD, "Se esperaba 'BUILD'")
+        self._consume(TokenType.TEX_INV, "Se esperaba 'TEX_INV'")
+        self._consume(TokenType.ON, "Se esperaba 'ON'")
+        
+        table_name = self._consume(TokenType.ID, "Se esperaba nombre de tabla").lexeme
+        
+        self._consume(TokenType.LPAREN, "Se esperaba '('")
+        column_name = self._consume(TokenType.ID, "Se esperaba nombre de columna").lexeme
+        self._consume(TokenType.RPAREN, "Se esperaba ')'")
+        
+        return BuildTexInvStmt(table_name, column_name)    
     
     def _parse_create_statement(self) -> Union[CreateTableStmt, CreateTableFileStmt]: # create_statement -> CREATE TABLE name (column_definitions) | CREATE TABLE name FROM FILE "path" USING INDEX type(column)
         self._consume(TokenType.CREATE, "Se esperaba 'CREATE'")
@@ -375,6 +392,8 @@ class SQLParser:
             operator = CompOp.GREATER_EQUALS
         elif self._match(TokenType.GREATER_THAN):
             operator = CompOp.GREATER_THAN
+        elif self._match(TokenType.MATCHES):  # imv
+            operator = CompOp.MATCHES    
         else:
             raise ParseError(f"Operador de comparación inesperado: {self._peek().lexeme}")
         value = self._parse_value()
@@ -550,3 +569,9 @@ class SQLParser:
         
         current_token = self._peek()
         raise ParseError(f"{message}. Se encontró '{current_token.lexeme}' en línea {current_token.line}")
+    
+    def _execute_build_tex_inv(self, stmt: BuildTexInvStmt) -> None:
+        """Construir índice invertido para una columna de texto"""
+        table_name = stmt.table_name
+        column_name = stmt.column_name
+        "implmentar teneind e cuanet a l¿tolo q mi algortimo ya tiene "

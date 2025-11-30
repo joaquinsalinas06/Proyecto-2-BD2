@@ -8,8 +8,8 @@ import itertools
 import math
 from typing import Dict, List, Optional, Tuple, TypeAlias, Iterable
 
-from document_file import DocumentFile, DOC_HEADER_SIZE, DOC_RECORD_SIZE, DOC_RECORD_FORMAT,_encode_doc_id
-from utils.text_utils import bow  # bag of words: str -> Dict[str, int]
+from .document_file import DocumentFile, DOC_HEADER_SIZE, DOC_RECORD_SIZE, DOC_RECORD_FORMAT,_encode_doc_id
+from .utils.text_utils import bow  # bag of words: str -> Dict[str, int]
 
 MEMORY_LIMIT =  8 * 1024 * 1024     
 BUCKET_LIMIT = 64 * 1024

@@ -62,6 +62,17 @@ class TokenType(Enum):
     EOF = "EOF"
 
 
+    TEXT = "TEXT"           # inv de text
+    TEX_INV = "TEX_INV"     # inv de text
+    MATCHES = "@@" 
+    BUILD = "BUILD"
+    ON = "ON"
+    
+
+    
+
+
+
 class Token:
     def __init__(self, token_type: TokenType, lexeme: str, line: int = 1, column: int = 1):
         self.type = token_type
@@ -115,4 +126,10 @@ KEYWORDS = {
     'RTREE': TokenType.RTREE,
     'KNN_SEQ': TokenType.KNN_SEQ,
     'KNN_INV': TokenType.KNN_INV,
+
+    ##inv text 
+    'TEXT': TokenType.TEXT,
+    'ON': TokenType.ON,
+    'TEX_INV': TokenType.TEX_INV,
+    'BUILD': TokenType.BUILD,  
 }

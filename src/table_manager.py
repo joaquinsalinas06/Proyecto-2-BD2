@@ -17,6 +17,10 @@ from src.records.indices import create_index
 from src.multimedia.feature_extractors import SIFTExtractor
 from src.multimedia.feature_extractors import MFCCExtractor
 from src.multimedia.build_pipeline import build_knn_index_from_collection
+from .parser.ast import BuildTexInvStmt, DataType
+from src.records.indices.inverted_index.inverted_index import InvertedIndex
+from src.records.indices.inverted_index.text_index import TextIndexer
+import os
 
 '''
 La clase Table representa una tabla en la base de datos, con su esquema y sus índices, de tal forma
@@ -33,6 +37,7 @@ class Table:
         self.schema = columns 
 
         self.indexes = {}
+        self.text_indices = {} 
 
         self.key_column = None
         for col in columns:
@@ -261,6 +266,8 @@ class TableManager:
                     "table_name": stmt.table_name,
                     "deleted_count": deleted_count
                 }
+            elif isinstance(stmt, BuildTexInvStmt):  # ← AGREGAR ESTA RAMA
+                return self._execute_build_tex_inv(stmt)
 
             else:
                 return {
@@ -671,6 +678,7 @@ class TableManager:
 
         if where_condition:
             filtered_dicts = self._execute_condition(table, where_condition, limit=limit)
+
         else:
             index = table.get_primary_index()
             filtered_dicts = index.getAllRecords()
@@ -746,7 +754,7 @@ class TableManager:
     '''
     def _execute_condition(self, table: Table, condition: Condition, limit: Optional[int] = None) -> List:
         if isinstance(condition, CompCond):
-            return self._comparison_condition(table, condition)
+            return self._comparison_condition(table, condition,limit=limit)
 
         elif isinstance(condition, BetweenCond):
             return self._between_condition(table, condition)
@@ -771,11 +779,75 @@ class TableManager:
     En el caso de los indices secundarios, se obtiene una referencia (la llave primaria) y se vuelve a realizar
     una busqueda en el indice primario para obtener el registro completo
     '''
-    def _comparison_condition(self, table: Table, condition: CompCond) -> List:
+    def _comparison_condition(self, table: Table, condition: CompCond,limit: Optional[int] = None) -> List:
         column_name = condition.column
         operator = condition.operator.value
         search_value = condition.value.value
+        
 
+        if operator == "@@":
+            # Búsqueda en índice invertido
+            if not hasattr(table, 'text_indices') or not table.text_indices:
+                raise ValueError(f"No existe índice TEX_INV para tabla '{table.name}'")
+            
+            idx_key = f"{table.name}_{column_name}"
+            
+            if idx_key not in table.text_indices:
+                raise ValueError(
+                    f"No existe índice TEX_INV para {table.name}({column_name}). "
+                    f"Ejecuta: BUILD TEX_INV ON {table.name}({column_name});"
+                )
+            
+            # Obtener el índice invertido
+            idx_info = table.text_indices[idx_key]
+            inv_index = idx_info['inv_index']
+            
+            # Buscar en índice invertido (retorna lista de (doc_id, score))
+            print("estoy imprimento mi top ", limit)
+            matching_docs = inv_index.search(search_value, limit=limit or 100)
+            
+            if not matching_docs:
+                return []
+            
+            # Recuperar registros completos usando IDs obtenidos
+            primary_index = table.get_primary_index()
+            results = []
+            
+            for doc_id, score in matching_docs:
+                try:
+                    # ← FIX: Convertir doc_id al tipo correcto
+                    # doc_id viene como string, pero la clave primaria puede ser int
+                    pk_col = table.key_column
+                    
+                    # Obtener el tipo de la clave primaria
+                    pk_type = None
+                    for col in table.columns:
+                        if col.name == pk_col:
+                            pk_type = col.data_type
+                            break
+                    
+                    # Convertir doc_id al tipo correcto
+                    if pk_type and pk_type.value == "INT":
+                        try:
+                            doc_id_converted = int(doc_id)
+                        except ValueError:
+                            print(f"[WARN] No se pudo convertir doc_id '{doc_id}' a INT")
+                            continue
+                    else:
+                        doc_id_converted = doc_id
+                    
+                    # Buscar en índice primario
+                    records = primary_index.search(doc_id_converted)
+                    if records:
+                        record = records[0].copy() if isinstance(records, list) else records.copy()
+                        record['_score'] = score
+                        results.append(record)
+                except Exception as e:
+                    print(f"[WARN] No se pudo recuperar documento {doc_id}: {str(e)}")
+                    continue
+            
+            return results
+        
         index = table.indexes.get(column_name)
 
         if index is None:
@@ -1307,3 +1379,126 @@ class TableManager:
         
         if primary_index and hasattr(primary_index, 'reset_io_stats'):
             primary_index.reset_io_stats()
+
+
+
+
+
+
+    def _execute_build_tex_inv(self, stmt: BuildTexInvStmt) -> Dict[str, Any]:
+        """
+        Construir índice invertido TEX_INV para una columna de texto.
+        
+        Flujo:
+        1. Validar que tabla y columna existan
+        2. Validar que la columna sea TEXT (aunque no esté declarada como tal)
+        3. Recorrer todos los registros y extraer la columna
+        4. Usar TextIndexer para agregar documentos
+        5. Finalizar indexador
+        6. Construir índice invertido con build_index() y compute_tfidf_norms()
+        7. Guardar referencia en self.tables[table].text_indices
+        """
+        
+        table_name = stmt.table_name
+        column_name = stmt.column_name
+        
+        # 1) VALIDAR que tabla existe
+        if table_name not in self.tables:
+            raise ValueError(f"Tabla '{table_name}' no existe")
+        
+        table = self.tables[table_name]
+        
+        # 2) VALIDAR que columna existe
+        col_def = None
+        for col in table.columns:
+            if col.name == column_name:
+                col_def = col
+                break
+        
+        if not col_def:
+            raise ValueError(f"Columna '{column_name}' no existe en tabla '{table_name}'")
+        
+        # 3) CREAR DIRECTORIO para índices invertidos si no existe
+        tex_inv_dir = os.path.join(self.indices_directory, "text_indices")
+        os.makedirs(tex_inv_dir, exist_ok=True)
+        
+        # 4) DEFINIR rutas de archivos del índice invertido
+        idx_key = f"{table_name}_{column_name}"
+        inv_path = os.path.join(tex_inv_dir, f"{idx_key}_inv.dat")
+        doc_path = os.path.join(tex_inv_dir, f"{idx_key}_doc.dat")
+        
+        # 5) CREAR TextIndexer (para agregar documentos)
+        indexer = TextIndexer(inv_path, doc_path)
+        
+        # 6) RECORRER todos los registros y extraer la columna TEXT
+        # Obtenemos el índice primario para iterar todos los registros
+        try:
+            primary_index = table.get_primary_index()
+            all_records = primary_index.getAllRecords()
+        except Exception as e:
+            raise ValueError(f"No se pudo acceder a los registros de '{table_name}': {str(e)}")
+        
+        # 7) AGREGAR cada documento al indexador
+        doc_count = 0
+        for record in all_records:
+            # Obtener ID del documento (usar la clave primaria como doc_id)
+            doc_id = str(record.get(table.key_column, f"doc_{doc_count}"))
+            
+            # Extraer valor de la columna TEXT
+            text_value = record.get(column_name, "")
+            
+            # Convertir a string si no lo es
+            if text_value:
+                text_value = str(text_value).strip()
+                if text_value:
+                    # Agregar documento al indexador
+                    indexer.add_document(doc_id, text_value)
+                    doc_count += 1
+        
+        print(f"[INFO] Indexados {doc_count} documentos para {idx_key}")
+        
+        # 8) FINALIZAR el indexador (guarda datos a disco)
+        indexer.finalize()
+        print(f"[INFO] Indexador finalizado para {idx_key}")
+        
+        # 9) CONSTRUIR el índice invertido (ordena y compila)
+        try:
+            inv_index = InvertedIndex(inv_path, docfile_path=doc_path)
+            inv_index.build_index()
+            print(f"[INFO] Índice invertido compilado para {idx_key}")
+            
+            # 10) CALCULAR normas TF-IDF para búsquedas
+            inv_index.compute_tfidf_norms()
+            print(f"[INFO] Normas TF-IDF calculadas para {idx_key}")
+        except Exception as e:
+            raise ValueError(f"Error al construir índice invertido: {str(e)}")
+        
+        # 11) GUARDAR referencia del índice en la tabla
+        # Inicializar text_indices si no existe
+        if not hasattr(table, 'text_indices'):
+            table.text_indices = {}
+        
+        table.text_indices[idx_key] = {
+            'inv_index': inv_index,
+            'indexer': indexer,
+            'column_name': column_name,
+            'table_name': table_name,
+            'inv_path': inv_path,
+            'doc_path': doc_path,
+            'doc_count': doc_count
+        }
+        
+        print(f"[INFO] Índice TEX_INV '{idx_key}' construido exitosamente con {doc_count} documentos")
+        
+        return {
+            "type": "build_tex_inv",
+            "status": "ok",
+            "message": f"Índice TEX_INV construido para {table_name}({column_name})",
+            "table_name": table_name,
+            "column_name": column_name,
+            "documents_indexed": doc_count,
+            "index_key": idx_key
+        }
+
+
+               
