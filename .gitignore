@@ -19,11 +19,19 @@ data/spotify/*
 
 *data/
 
+# Ignorar solo índices de multimedia (muy pesados)
+data/indices/fashion/
+Fashion/images/
+indices/fashion/
 
-*.dat
-*.idx
-*.db
-**/tables_metadata.json
+# Ignorar archivos .dat de multimedia
+src/multimedia/**/*.dat
+api/indices/**/*.dat
+
+# Permitir archivos de records
+!src/records/**/*.dat
+!src/records/**/*.idx
+!src/records/**/*.db
 
 env2/Scripts/python.exe
 
