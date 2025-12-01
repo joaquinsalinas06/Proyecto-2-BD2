@@ -5,6 +5,6 @@
 - Joaquin Mauricio Salinas Salas
 - Isaac Emanuel Javier Simeon Sarmiento
 - Nayeli Fernanda Guzman Huayta
-- Renzo Josimar Felix Apointe
+- Renzo Josimar Felix Aponte
 
 Toda la documentación del proyecto se encuentra en el apartado wiki del repositorio

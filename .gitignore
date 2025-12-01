@@ -13,6 +13,7 @@ venv/
 *.DS_Store
 
 *.csv
+!spotify_millsongdata.csv
 !data/benchmarks/*.csv
 data/spotify/*
 
@@ -31,4 +32,8 @@ api/indices/**/*.dat
 !src/records/**/*.dat
 !src/records/**/*.idx
 !src/records/**/*.db
+
+env2/Scripts/python.exe
+
+/env2
 

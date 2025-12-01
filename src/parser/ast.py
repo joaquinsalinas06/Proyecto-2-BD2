@@ -12,6 +12,7 @@ class DataType(Enum):
     ARRAY = "ARRAY"
     IMAGE = "IMAGE"
     AUDIO = "AUDIO"
+    TEXT="TEXT"
 
 
 class IndexType(Enum):
@@ -31,12 +32,20 @@ class CompOp(Enum):
     LESS_EQUALS = "<="
     GREATER_THAN = ">"
     GREATER_EQUALS = ">="
+    ## inv
+    MATCHES = "@@"
 
 
 class LogicOp(Enum):
     AND = "AND"
     OR = "OR"
 
+
+@dataclass
+class BuildTexInvStmt:
+    """BUILD TEX_INV ON tabla(columna);"""
+    table_name: str
+    column_name: str
 
 @dataclass
 class ColumnDef:
@@ -154,7 +163,10 @@ Statement = Union[
     CreateTableFileStmt,
     SelectStmt,
     InsertStmt,
-    DeleteStmt
+    DeleteStmt,
+
+    ##inv
+    BuildTexInvStmt,
 ]
 
 
