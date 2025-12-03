@@ -1,4 +1,4 @@
-# Proyecto 1 - Organización e Indexación Eficiente de Archivos con Datos Multidimensionales
+# Proyecto 2 - Organización e Indexación Eficiente de Archivos con Datos Multidimensionales
 
 ## 👥 Integrantes
 
